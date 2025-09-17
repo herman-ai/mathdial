@@ -84,7 +84,7 @@ To train the model using SFT, navigate to the `SFT_Finetuning` folder and run th
 cd SFT_Finetuning
 python SFT_Finetuning.py
 ```
-This will fine-tune the Qwen/Qwen2.5-1.5B-Instruct model on the MathDial dataset.
+This will fine-tune the Qwen/Qwen2.5-1.5B-Instruct model on the MathDial dataset. The model is available at [Huggingface eth-nlped/MathDial-SFT-Qwen2.5-1.5B-Instruct](https://huggingface.co/eth-nlped/MathDial-SFT-Qwen2.5-1.5B-Instruct).
 
 # Citation
 Please cite the following:
