@@ -78,6 +78,13 @@ Example using dummy data:
 python interactivetutoring/evaluate.py --input_file "output/example_model_output.jsonl" --model_name "chatgpt_baseline"  
 ```
 
+## Supervised Fine-Tuning (SFT)
+To train the model using SFT, navigate to the `SFT_Finetuning` folder and run the script. Or run the following command:
+```bash 
+cd SFT_Finetuning
+python SFT_Finetuning.py
+```
+This will fine-tune the Qwen/Qwen2.5-1.5B-Instruct model on the MathDial dataset.
 
 # Citation
 Please cite the following:
