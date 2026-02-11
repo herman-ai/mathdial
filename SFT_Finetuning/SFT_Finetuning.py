@@ -108,7 +108,7 @@ training_config = SFTConfig(
     optim="adamw_torch",
     learning_rate=6.25e-5,
     weight_decay=0.01,
-    fp16=True,
+    fp16=False,
     max_length=tokenization_length
 )
 
