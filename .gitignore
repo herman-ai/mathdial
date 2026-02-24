@@ -2,3 +2,4 @@
 *.bin
 *.pt
 __pycache__
+models/
