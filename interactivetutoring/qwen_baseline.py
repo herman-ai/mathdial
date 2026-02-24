@@ -31,9 +31,15 @@ class QwenStudent:
         conversation = [
             {
                 "role": "system",
-                "content": f"You are {self.name}, a student working through a math problem. "
-                           f"You have attempted this solution: {incorrect_solution}. "
-                           f"Respond naturally as a student would, explaining your thinking."
+                "content": f"You are {self.name}, a real student working through this math problem: {question}\n"
+                           f"Your current (possibly wrong) attempt is: {incorrect_solution}\n\n"
+                           f"Student behavior policy:\n"
+                           f"- Speak in first person as a learner, not a tutor.\n"
+                           f"- Be uncertain sometimes and show partial understanding.\n"
+                           f"- Give short, natural reasoning (2-5 sentences).\n"
+                           f"- Do not present a polished final solution unless asked directly.\n"
+                           f"- If confused, ask a brief clarifying question.\n"
+                           f"- Keep mistakes realistic and consistent with your incorrect attempt."
             }
         ]
         
@@ -56,10 +62,12 @@ class QwenStudent:
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=256,
+                max_new_tokens=120,
                 do_sample=True,
-                temperature=0.7,
-                top_p=0.9
+                temperature=0.95,
+                top_p=0.95,
+                top_k=60,
+                repetition_penalty=1.1
             )
         
         response = self.tokenizer.decode(outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True)
@@ -121,7 +129,9 @@ def get_args():
     parser.add_argument("--export_file", type=str, default="output/qwen_model_output.jsonl")
     parser.add_argument("--model_name", type=str, default="qwen_baseline")
     parser.add_argument("--model_path", type=str, default="Qwen/Qwen2.5-1.5B-Instruct",
-                        help="Path to Qwen model or HuggingFace model ID")
+                        help="Path to teacher Qwen model or HuggingFace model ID")
+    parser.add_argument("--student_model_path", type=str, default=None,
+                        help="Path to student Qwen model. Defaults to --model_path if not set.")
     parser.add_argument("--max_utterances", type=int, default=4)
     return parser.parse_args()
 
@@ -143,18 +153,31 @@ def print_conversation(question: str, ground_truth_solution: str, incorrect_solu
 if __name__ == '__main__':
     args = get_args()
     
-    # Load Qwen model and tokenizer
-    print(f"Loading model: {args.model_path}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    tokenizer = AutoTokenizer.from_pretrained(args.model_path)
-    model = AutoModelForCausalLM.from_pretrained(args.model_path).to(device)
-    print(f"Model loaded on {device}")
-    
+
+    # Load teacher model
+    print(f"Loading teacher model: {args.model_path}")
+    teacher_tokenizer = AutoTokenizer.from_pretrained(args.model_path)
+    teacher_model = AutoModelForCausalLM.from_pretrained(args.model_path).to(device)
+    print(f"Teacher model loaded on {device}")
+
+    # Load student model (separate weights if --student_model_path is provided)
+    student_model_path = args.student_model_path or args.model_path
+    if student_model_path != args.model_path:
+        print(f"Loading student model: {student_model_path}")
+        student_tokenizer = AutoTokenizer.from_pretrained(student_model_path)
+        student_model = AutoModelForCausalLM.from_pretrained(student_model_path).to(device)
+        print(f"Student model loaded on {device}")
+    else:
+        print("Student and teacher share the same model weights.")
+        student_tokenizer = teacher_tokenizer
+        student_model = teacher_model
+
     conversations = []
     data = read_jsonl(args.input_file)
-    
-    student = QwenStudent(model, tokenizer, device)
-    teacher = QwenTeacher(model, tokenizer, device)
+
+    student = QwenStudent(student_model, student_tokenizer, device)
+    teacher = QwenTeacher(teacher_model, teacher_tokenizer, device)
 
     for problem in tqdm(data):
         question = problem["question"]
