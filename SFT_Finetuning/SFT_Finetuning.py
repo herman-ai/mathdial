@@ -16,7 +16,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct").to(device)
 
 # Load MathDial dataset
-dataset = load_dataset("eth-nlped/mathdial-chat")
+# dataset = load_dataset("eth-nlped/mathdial-chat")
+dataset = load_dataset("eth-nlped/mathdial")
 
 #Extract student name from profile
 def extract_name(profile: str) -> str:
@@ -32,38 +33,57 @@ def extract_name(profile: str) -> str:
 def prepare_conversations(dataset_split):
     processed_data = []
     for example in tqdm(dataset_split, desc="Processing dataset"):
-        conversation = example.get('conversation', [])
+        raw_conversation = example.get('conversation', '')
         ground_truth = example.get('ground_truth', '')
+        question = example.get('question', '')
         student_profile = example.get('student_profile', '')
+        student_incorrect_solution = example.get('student_incorrect_solution', '')
         student_name = extract_name(student_profile)
-        
-        if not conversation or len(conversation) < 2:
+
+        if not raw_conversation:
             continue
 
-        studentprofile = example.get('student_profile', '')
-        studentname = extract_name(studentprofile)
-        for conv in conversation:
-            if isinstance(conv, dict) and 'content' in conv and conv['role'] == 'system':
-                conv['content'] = conv['content'].replace(
-                    "The student is trying to solve the following problem:",
-                    f"The student, with the name {studentname}, is trying to solve the following problem:"
-                )
+        # --- Build teacher system prompt (teacher knows the ground truth) ---
+        system_message = {
+            "role": "system",
+            "content": (
+                f"You are a math tutor helping {student_name} solve the following problem:\n{question}\n\n"
+                f"The correct solution is as follows:\n{ground_truth}\n\n"
+                f"The student's current (incorrect) attempt is:\n{student_incorrect_solution}"
+            )
+        }
 
-        for conv in conversation:
-            if isinstance(conv, dict) and 'role' in conv and conv['role'] == 'system':
-                conv['content'] += f"\nThe correct solution is as follows:\n{ground_truth}\n"
-                break  # Exit the loop after modifying the first 'system' role
-        student_incorrect_solution = example.get('student_incorrect_solution', '')
-        student_incorrect_solution_dict = {"content": student_incorrect_solution, "role": "user"}
+        # --- Parse "|EOM|"-delimited turns from the mathdial string format ---
+        # Teacher turns -> "assistant" (the target output we train on)
+        # Student turns -> "user" (the input context)
+        turns = [t.strip() for t in raw_conversation.split('|EOM|') if t.strip()]
+        if len(turns) < 2:
+            continue
 
-        for i, conv in enumerate(conversation):
-            if conv['role'] == 'system':
-                if i + 1 < len(conversation) and conversation[i + 1] == student_incorrect_solution_dict:
-                    break
-            conversation.insert(i + 1, student_incorrect_solution_dict)
-            break 
-        assistant_positions = [i for i, msg in enumerate(conversation) if i > 0 and msg.get('role', '').lower() == 'assistant']
-        
+        # Prepend the student's incorrect solution as the first user message so the
+        # teacher has context before the first real student turn.
+        conversation = [
+            system_message,
+            {"role": "user", "content": student_incorrect_solution},
+        ]
+        for turn in turns:
+            if ': ' not in turn:
+                continue
+            speaker, content = turn.split(': ', 1)
+            speaker = speaker.strip()
+            content = content.strip()
+            if speaker.lower() == 'teacher':
+                conversation.append({"role": "assistant", "content": content})
+            else:
+                # Any non-teacher speaker is the student
+                conversation.append({"role": "user", "content": content})
+
+        # --- Find teacher ("assistant") positions to train on ---
+        assistant_positions = [
+            i for i, msg in enumerate(conversation)
+            if i > 0 and msg.get('role', '').lower() == 'assistant'
+        ]
+
         if not assistant_positions:
             continue
 
@@ -73,10 +93,16 @@ def prepare_conversations(dataset_split):
             full_text = tokenizer.apply_chat_template(context + [conversation[pos]], tokenize=False)
             encoded_text = tokenizer.encode(full_text, add_special_tokens=False)
 
-            if len(encoded_text) < tokenization_length:
-                tokenized = tokenizer(full_text, add_special_tokens=True, truncation=True, padding='max_length', max_length=tokenization_length)
-            else:
+            if len(encoded_text) >= tokenization_length:
                 continue
+
+            tokenized = tokenizer(
+                full_text,
+                add_special_tokens=True,
+                truncation=True,
+                padding='max_length',
+                max_length=tokenization_length
+            )
 
             input_ids = tokenized["input_ids"]
             attention_mask = tokenized["attention_mask"]
@@ -86,9 +112,10 @@ def prepare_conversations(dataset_split):
             processed_data.append({
                 "input_ids": input_ids,
                 "attention_mask": attention_mask,
-                "labels": labels
+                "labels": labels,
+                "weight": (example.get('self-typical-confusion') or 0) + (example.get('self-typical-interactions') or 0)
             })
-    
+
     return Dataset.from_list(processed_data)
 
 # Prepare training and test datasets
@@ -98,7 +125,7 @@ test_dataset_hf = prepare_conversations(dataset["test"])
 
 # Training configuration
 training_config = SFTConfig(
-    output_dir=f"./Qwen_SFT_model/finetuned_qwen_model",
+    output_dir=f"./models/Qwen_SFT_model/finetuned_weighted_qwen_instruct_teacher_model",
     per_device_train_batch_size=8,
     num_train_epochs=3,
     logging_steps=10,
@@ -112,6 +139,7 @@ training_config = SFTConfig(
     max_length=tokenization_length
 )
 
+##################################################################
 # Trainer
 trainer = SFTTrainer(
     model=model,
@@ -120,6 +148,26 @@ trainer = SFTTrainer(
     eval_dataset=test_dataset_hf
 )
 
+def compute_weights(dataset):
+    scores = torch.tensor([example['weight'] for example in dataset], dtype=torch.float)
+    scores = (scores - scores.min()) / (scores.max() - scores.min() + 1e-8)
+    return scores
+
+def custom_dataloader_function(self):
+    weights = compute_weights(self.train_dataset)
+    train_dataset = self.train_dataset.remove_columns(["weight"])
+    print("Weights computed for training samples.")
+    print(f"Sample weights: {weights[:10]}")  # Print first 10 weights for verification
+    sampler = torch.utils.data.WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
+    return torch.utils.data.DataLoader(train_dataset, 
+                                       batch_size=self.args.per_device_train_batch_size, 
+                                       sampler=sampler, 
+                                       collate_fn=self.data_collator, 
+                                       num_workers=self.args.dataloader_num_workers,
+                                       pin_memory=self.args.dataloader_pin_memory)
+
+trainer.get_train_dataloader = custom_dataloader_function.__get__(trainer)
+##################################################################
 
 # Train model
 print("Start training")
@@ -127,5 +175,5 @@ trainer.train()
 print("Training complete")
 
 # Save fine-tuned model
-trainer.save_model(f"./Qwen_SFT_model/finetuned_qwen_model")
-tokenizer.save_pretrained(f"./Qwen_SFT_model/finetuned_qwen_model")
+trainer.save_model(f"./models/Qwen_SFT_model/finetuned_weighted_qwen_instruct_teacher_model")
+tokenizer.save_pretrained(f"./models/Qwen_SFT_model/finetuned_weighted_qwen_instruct_teacher_model")

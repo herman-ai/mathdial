@@ -25,8 +25,10 @@ tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct").to(device)
 
-dataset = load_dataset("eth-nlped/mathdial-chat")
+dataset = load_dataset("eth-nlped/mathdial")
+# dataset = load_dataset("eth-nlped/mathdial-chat")
 
+print(f"Columns in dataset: {dataset['train'].column_names}")
 
 def extract_name(profile: str) -> str:
     return profile.split()[0] if profile else "Student"
@@ -45,13 +47,13 @@ def prepare_student_conversations(dataset_split):
     processed_data = []
 
     for example in tqdm(dataset_split, desc="Processing dataset"):
-        raw_conversation = example.get('conversation', [])
+        raw_conversation = example.get('conversation', '')
         question = example.get('question', '')
         student_incorrect_solution = example.get('student_incorrect_solution', '')
         student_profile = example.get('student_profile', '')
         student_name = extract_name(student_profile)
 
-        if not raw_conversation or len(raw_conversation) < 2:
+        if not raw_conversation:
             continue
 
         # --- Build student system prompt ---
@@ -72,32 +74,25 @@ def prepare_student_conversations(dataset_split):
             )
         }
 
-        # --- Flip roles, skip original system and injected incorrect-solution turn ---
-        # In eth-nlped/mathdial-chat:
-        #   role="assistant" -> teacher/tutor turn
-        #   role="user"      -> student turn
-        # We skip the first "user" message after the system because the original
-        # training code injects the incorrect solution there; we capture that via
-        # student_incorrect_solution instead.
+        # --- Parse "|EOM|"-delimited turns from the mathdial string format ---
+        # Each turn is "Speaker: content" where Speaker is "Teacher" or the student name.
+        # Teacher turns -> "user" (the prompt seen by the student model)
+        # Student turns -> "assistant" (the target output we train on)
+        turns = [t.strip() for t in raw_conversation.split('|EOM|') if t.strip()]
+        if len(turns) < 2:
+            continue
+
         flipped = [system_message]
-        skipped_first_user = False
-
-        for msg in raw_conversation:
-            role = msg.get('role', '').lower()
-            content = msg.get('content', '')
-
-            if role == 'system':
-                # Replaced by our student system prompt above
+        for turn in turns:
+            if ': ' not in turn:
                 continue
-            if role == 'user' and not skipped_first_user:
-                # Skip the injected incorrect-solution message
-                skipped_first_user = True
-                continue
-            if role == 'assistant':
-                # Teacher turn -> becomes the "user" prompt seen by the student model
+            speaker, content = turn.split(': ', 1)
+            speaker = speaker.strip()
+            content = content.strip()
+            if speaker.lower() == 'teacher':
                 flipped.append({"role": "user", "content": content})
-            elif role == 'user':
-                # Student turn -> the target "assistant" output we are training on
+            else:
+                # Any non-teacher speaker is the student
                 flipped.append({"role": "assistant", "content": content})
 
         # --- Find student (now "assistant") positions to train on ---
@@ -145,7 +140,8 @@ def prepare_student_conversations(dataset_split):
             processed_data.append({
                 "input_ids": input_ids,
                 "attention_mask": attention_mask,
-                "labels": labels
+                "labels": labels,
+                "weight": (example.get('self-typical-confusion') or 0) + (example.get('self-typical-interactions') or 0)
             })
 
     return Dataset.from_list(processed_data)
@@ -160,7 +156,7 @@ print(f"Evaluation examples: {len(test_dataset_hf)}")
 
 # Training configuration — same hyperparameters as the teacher SFT
 training_config = SFTConfig(
-    output_dir="./Qwen_SFT_model/finetuned_qwen_student_model",
+    output_dir="./models/Qwen_SFT_model/finetuned_unweighted_qwen_student_model",
     per_device_train_batch_size=8,
     num_train_epochs=3,
     logging_steps=10,
@@ -174,6 +170,9 @@ training_config = SFTConfig(
     max_length=tokenization_length
 )
 
+
+##################################################################
+# Trainer
 trainer = SFTTrainer(
     model=model,
     args=training_config,
@@ -181,10 +180,33 @@ trainer = SFTTrainer(
     eval_dataset=test_dataset_hf
 )
 
-print("Start training student model")
+def compute_weights(dataset):
+    scores = torch.tensor([example['weight'] for example in dataset], dtype=torch.float)
+    scores = (scores - scores.min()) / (scores.max() - scores.min() + 1e-8)
+    return scores
+
+def custom_dataloader_function(self):
+    weights = compute_weights(self.train_dataset)
+    train_dataset = self.train_dataset.remove_columns(["weight"])
+    print("Weights computed for training samples.")
+    print(f"Sample weights: {weights[:10]}")  # Print first 10 weights for verification
+    sampler = torch.utils.data.WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
+    return torch.utils.data.DataLoader(train_dataset, 
+                                       batch_size=self.args.per_device_train_batch_size, 
+                                       sampler=sampler, 
+                                       collate_fn=self.data_collator, 
+                                       num_workers=self.args.dataloader_num_workers,
+                                       pin_memory=self.args.dataloader_pin_memory)
+
+# trainer.get_train_dataloader = custom_dataloader_function.__get__(trainer) # Monkey-patch the trainer to use our custom dataloader with weighted sampling
+##################################################################
+
+
+# Train model
+print("Start training")
 trainer.train()
 print("Training complete")
 
-trainer.save_model("./Qwen_SFT_model/finetuned_qwen_student_model")
-tokenizer.save_pretrained("./Qwen_SFT_model/finetuned_qwen_student_model")
-print("Model saved to ./Qwen_SFT_model/finetuned_qwen_student_model")
+trainer.save_model("./models/Qwen_SFT_model/finetuned_unweighted_qwen_student_model")
+tokenizer.save_pretrained("./models/Qwen_SFT_model/finetuned_unweighted_qwen_student_model")
+print("Model saved to ./models/Qwen_SFT_model/finetuned_unweighted_qwen_student_model")

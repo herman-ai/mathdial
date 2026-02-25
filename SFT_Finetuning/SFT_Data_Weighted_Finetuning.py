@@ -83,10 +83,11 @@ def prepare_conversations(dataset_split):
             len_input = len(tokenizer(input_text, add_special_tokens=False)["input_ids"])
             labels = [-100] * len_input + input_ids[len_input:]
             labels = labels[:tokenization_length] + [-100] * (tokenization_length - len(labels))
-            processed_data.append({
+        processed_data.append({
                 "input_ids": input_ids,
                 "attention_mask": attention_mask,
-                "labels": labels
+                "labels": labels,
+                "weight": example.get('self-typical-confusion', 0) + example.get('self-typical-interactions', 0)
             })
     
     return Dataset.from_list(processed_data)
@@ -121,14 +122,8 @@ trainer = SFTTrainer(
 )
 
 def compute_weights(dataset):
-    scores = []
-    for example in dataset:
-        q = example.get('self-typical-confusion', 0) + example.get('self-typical-interactions', 0)
-        scores.append(q)
-
-    scores = torch.tensor(scores, dtype=torch.float)
+    scores = torch.tensor([example['weight'] for example in dataset], dtype=torch.float)
     scores = (scores - scores.min()) / (scores.max() - scores.min() + 1e-8)
-
     return scores
 
 def custom_dataloader_function(self):
