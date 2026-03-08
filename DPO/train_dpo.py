@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -6,6 +7,7 @@ from trl import DPOConfig, DPOTrainer
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--sft_checkpoint", type=str, default="./models/Qwen_SFT_model/finetuned_unweighted_qwen_instruct_teacher_model", help="Path to the SFT checkpoint")
+parser.add_argument("--output_dir", type=str, default="./models/dpo_qwen_tutor", help="Directory to save checkpoints and final model")
 args = parser.parse_args()
 
 model_name_or_path = args.sft_checkpoint
@@ -37,15 +39,15 @@ eval_dataset = load_dataset(
 )["eval"]
 
 training_args = DPOConfig(
-    output_dir="./models/dpo_qwen_tutor",
+    output_dir=args.output_dir,
     per_device_train_batch_size=2,
     per_device_eval_batch_size=2,
-    gradient_accumulation_steps=1,   # 8
+    gradient_accumulation_steps=8,   # 8
     learning_rate=5e-7,
-    num_train_epochs=10,
-    logging_steps=1,  # 10
-    eval_steps=1,     # 100
-    save_steps=5,     # 100
+    num_train_epochs=1,
+    logging_steps=10,  # 10
+    eval_steps=100,     # 100
+    save_steps=100,     # 100
     bf16=True,
     remove_unused_columns=False,
     max_length=2048,
@@ -65,6 +67,6 @@ trainer = DPOTrainer(
 )
 
 trainer.train()
-trainer.save_model("./models/dpo_qwen_tutor/final")
-tokenizer.save_pretrained("./models/dpo_qwen_tutor/final")
+trainer.save_model(os.path.join(args.output_dir, "final"))
+tokenizer.save_pretrained(os.path.join(args.output_dir, "final"))
 

@@ -14,7 +14,7 @@ from message import Message
 from roles import Roles
 from qwen_baseline import QwenTeacher
 
-MODEL_PATH = "./models/Qwen_SFT_model/finetuned_weighted_qwen_instruct_teacher_model"
+MODEL_PATH = "./models/Qwen_SFT_model/finetuned_unweighted_qwen_instruct_teacher_model"
 TRAIN_OUT = "./data/preference-data/train.jsonl"
 EVAL_OUT = "./data/preference-data/eval.jsonl"
 
