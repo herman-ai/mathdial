@@ -1,7 +1,11 @@
 import json
 import os
 import re
+import sys
 import torch
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "interactivetutoring"))
+
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
@@ -80,7 +84,7 @@ def build_rows(dataset):
     return rows
 
 def write_jsonl(path, rows):
-    os.makedirs(os.path.dirname(path), conversationist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -92,7 +96,9 @@ tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 model = AutoModelForCausalLM.from_pretrained(MODEL_PATH).to(device)
 model.eval()
 
+print("Building teacher...")
 teacher = QwenTeacher(model, tokenizer, device)
+print("Processing dataset and building preference pairs...")
 dataset = load_dataset("eth-nlped/mathdial")
 
 train_rows = build_rows(dataset["train"])
