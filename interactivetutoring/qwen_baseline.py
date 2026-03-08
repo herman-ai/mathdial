@@ -83,8 +83,8 @@ class QwenTeacher:
     def reset(self):
         pass
     
-    def response(self, history: History, question: str, ground_truth_solution: str) -> str:
-        """Generate teacher response using Qwen model"""
+    def build_prompt(self, history: History, question: str, ground_truth_solution: str) -> str:
+        """Build prompt for teacher response without calling the model"""
         conversation = [
             {
                 "role": "system",
@@ -101,12 +101,16 @@ class QwenTeacher:
             elif msg.persona == Roles.STUDENT:
                 conversation.append({"role": "user", "content": msg.text})
         
-        # Generate response
-        text = self.tokenizer.apply_chat_template(
+        return self.tokenizer.apply_chat_template(
             conversation,
             tokenize=False,
             add_generation_prompt=True
         )
+    
+    def response(self, history: History, question: str, ground_truth_solution: str) -> str:
+        """Generate teacher response using Qwen model"""
+        # Build the prompt (conversation + template)
+        text = self.build_prompt(history, question, ground_truth_solution)
         
         inputs = self.tokenizer([text], return_tensors="pt").to(self.device)
         
