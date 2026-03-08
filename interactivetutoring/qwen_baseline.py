@@ -9,11 +9,14 @@ sys.path = [p for p in sys.path if 'dist-packages' not in p] + [p for p in sys.p
 
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers.generation import GenerationConfig
 
 from history import History
 from message import Message
 from roles import Roles
 from utils import read_jsonl
+
+BATCH_SIZE = 16
 
 
 class QwenStudent:
@@ -79,6 +82,17 @@ class QwenTeacher:
         self.model = model
         self.tokenizer = tokenizer
         self.device = device
+
+        self.generation_config = GenerationConfig(
+            max_new_tokens=256,
+            use_cuda_graph=False,
+            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+            do_sample=True,
+            max_batch_tokens=512,
+            temperature=0.7,
+            top_p=0.9
+        )
     
     def reset(self):
         pass
@@ -125,6 +139,25 @@ class QwenTeacher:
         
         response = self.tokenizer.decode(outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True)
         return response.strip()
+    
+    def response_batch(self, histories: list[History], questions: list[str], ground_truth_solutions: list[str]) -> list[str]:
+        """Generate teacher responses for a batch of conversations"""
+        prompts = [self.build_prompt(history, question, solution) for history, question, solution in zip(histories, questions, ground_truth_solutions)]
+        
+        inputs = self.tokenizer(prompts, return_tensors="pt", padding=True).to(self.device)
+        
+        with torch.no_grad():
+            outputs = self.model.generate_batch(
+                **inputs,
+                generation_config=self.generation_config,
+            )
+        
+        responses = []
+        for i in range(len(prompts)):
+            response = self.tokenizer.decode(outputs[i][len(inputs.input_ids[i]):], skip_special_tokens=True)
+            responses.append(response.strip())
+        
+        return responses
 
 
 def get_args():
@@ -164,6 +197,8 @@ if __name__ == '__main__':
     teacher_tokenizer = AutoTokenizer.from_pretrained(args.model_path)
     teacher_model = AutoModelForCausalLM.from_pretrained(args.model_path).to(device)
     print(f"Teacher model loaded on {device}")
+
+    #teacher_tokenizer.padding_side = "left"  # For auto-regressive decoding, padding should be on the left
 
     # Load student model (separate weights if --student_model_path is provided)
     student_model_path = args.student_model_path or args.model_path
