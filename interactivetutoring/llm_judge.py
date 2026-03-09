@@ -96,18 +96,25 @@ def format_conversation(raw: str) -> str:
 
 def extract_json(text: str) -> dict:
     """Extract the first JSON object from model output."""
+    # Strip markdown code fences (```json ... ``` or ``` ... ```)
+    text = re.sub(r'^```(?:json)?\s*', '', text.strip(), flags=re.IGNORECASE)
+    text = re.sub(r'\s*```$', '', text.strip())
+
     # Try direct parse first
     try:
         return json.loads(text.strip())
     except json.JSONDecodeError:
         pass
-    # Fall back to finding the first {...} block
-    match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
-    if match:
+
+    # Greedy: find first '{' and last '}' to handle reasoning fields with braces
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end != -1 and end > start:
         try:
-            return json.loads(match.group())
+            return json.loads(text[start:end + 1])
         except json.JSONDecodeError:
             pass
+
     raise ValueError(f"No valid JSON found in model output:\n{text[:500]}")
 
 

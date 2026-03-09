@@ -143,20 +143,31 @@ class QwenTeacher:
     def response_batch(self, histories: list[History], questions: list[str], ground_truth_solutions: list[str]) -> list[str]:
         """Generate teacher responses for a batch of conversations"""
         prompts = [self.build_prompt(history, question, solution) for history, question, solution in zip(histories, questions, ground_truth_solutions)]
-        
+
+        # Left-pad so all sequences end at the same position before generation
+        original_padding_side = self.tokenizer.padding_side
+        self.tokenizer.padding_side = "left"
         inputs = self.tokenizer(prompts, return_tensors="pt", padding=True).to(self.device)
-        
+        self.tokenizer.padding_side = original_padding_side
+
+        prompt_lengths = inputs.input_ids.shape[1]
+
         with torch.no_grad():
-            outputs = self.model.generate_batch(
+            outputs = self.model.generate(
                 **inputs,
-                generation_config=self.generation_config,
+                max_new_tokens=256,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.9,
+                pad_token_id=self.tokenizer.eos_token_id,
             )
-        
+
         responses = []
         for i in range(len(prompts)):
-            response = self.tokenizer.decode(outputs[i][len(inputs.input_ids[i]):], skip_special_tokens=True)
+            new_tokens = outputs[i][prompt_lengths:]
+            response = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
             responses.append(response.strip())
-        
+
         return responses
 
 

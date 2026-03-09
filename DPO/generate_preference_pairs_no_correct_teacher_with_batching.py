@@ -1,25 +1,35 @@
 import json
 import os
 import re
+import sys
 import torch
 import argparse
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "interactivetutoring"))
+
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
+import sys
 
+
+from tqdm import tqdm
 from history import History
 from message import Message
 from roles import Roles
 from qwen_baseline import QwenTeacher
-from llm_judge import judge_conversation, judge_conversation_batch
+from llm_judge import judge_conversation, judge_conversations_batch
 
-MODEL_PATH = "./models/Qwen_SFT_model/finetuned_unweighted_qwen_instruct_teacher_model"
-TRAIN_OUT = "./data/preference-data-no-real-teacher/train.jsonl"
-EVAL_OUT = "./data/preference-data-no-real-teacher/eval.jsonl"
+
+
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "models", "Qwen_SFT_model", "finetuned_unweighted_qwen_instruct_teacher_model")
+TRAIN_OUT = os.path.join(os.path.dirname(__file__), "..", "data", "preference-data-no-real-teacher", "train.jsonl")
+EVAL_OUT = os.path.join(os.path.dirname(__file__), "..", "data", "preference-data-no-real-teacher", "eval.jsonl")
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_generations', type=int, default=5, help='Number of generations per teacher turn')
+    parser.add_argument('--judge_model', type=str, default='mistralai/Mixtral-8x7B-Instruct-v0.1', help='HuggingFace model ID or local path for the judge model')
     return parser.parse_args()
 
 
@@ -104,13 +114,16 @@ def clean_response(turn_text):
 #                 history.add_message(Message(Roles.STUDENT, turn_text.strip()))
 #     return rows
 
-def build_rows_batched(dataset, num_generations):
+def build_rows_batched(dataset, num_generations, judge_model, judge_tokenizer):
     '''
     Build preference pairs from the dataset, batching teacher generations and judging each response only once.
     Each row is a dict with keys "prompt", "chosen", and "rejected".
     '''
     rows = []
-    for conversation in dataset:
+    total = len(dataset)
+    for conv_idx, conversation in enumerate(tqdm(dataset, desc="Building rows", unit="conv")):
+        if conv_idx % 50 == 0:
+            print(f"[Status] conversation {conv_idx}/{total} | rows so far: {len(rows)}", flush=True)
         question = conversation["question"]
         solution = conversation["ground_truth"]
         turns = parse_conversation(conversation["conversation"])
@@ -126,19 +139,31 @@ def build_rows_batched(dataset, num_generations):
                     responses = teacher.response_batch(batch_histories, batch_questions, batch_solutions)
                     responses = [clean_response(r) for r in responses]
                     # Judge each response only once
-                    judge_prompts = [history.format() + f"\nTeacher: {r}" for r in responses]
+                    judge_prompts = [str(history) + f"\nTeacher: {r}" for r in responses]
                     judge_questions = [question] * len(judge_prompts)
                     judge_solutions = [solution] * len(judge_prompts)
-                    judge_scores = judge_conversation_batch(model, tokenizer, device, judge_questions, judge_solutions, judge_prompts)
-                    # Compute average score for each response
-                    avg_scores = [
-                        (score["overall_quality"] * 2 + score["socratic"] * 1.5 + score["accuracy"] + score["relevance"] + score["conciseness"]) / 6.5
-                        for score in judge_scores
-                    ]
+                    judge_scores = judge_conversations_batch(judge_model, judge_tokenizer, device, judge_questions, judge_solutions, judge_prompts)
+                    # Compute average score for each response; None means judge failed — skip those
+
+                    def avg_score(score):
+                        try:
+                            return (
+                                score["overall_quality"] * 2 +
+                                score["socratic_guidance"] * 1.5 +
+                                score["mathematical_accuracy"] +
+                                score["relevance"] +
+                                score["conciseness"]
+                            ) / 6.5
+                        except (TypeError, KeyError):
+                            return None
+
+                    avg_scores = [avg_score(score) for score in judge_scores]
                     # Pairwise comparison using precomputed scores
                     for i in range(len(responses)):
                         for j in range(i + 1, len(responses)):
                             if responses[i] == responses[j]:
+                                continue
+                            if avg_scores[i] is None or avg_scores[j] is None:
                                 continue
                             if avg_scores[i] > avg_scores[j]:
                                 chosen, rejected = responses[i], responses[j]
@@ -152,6 +177,7 @@ def build_rows_batched(dataset, num_generations):
                 history.add_message(Message(Roles.TEACHER, turn_text.strip()))
             else:
                 history.add_message(Message(Roles.STUDENT, turn_text.strip()))
+    print(f"[Done] Finished {total} conversations. Total rows: {len(rows)}", flush=True)
     return rows
 
 def write_jsonl(path, rows):
@@ -172,12 +198,25 @@ if __name__ == "__main__":
     NUMBER_OF_GENERATIONS = args.num_generations
 
     teacher = QwenTeacher(model, tokenizer, device)
+
+    print(f"Loading judge model: {args.judge_model}")
+    judge_tokenizer = AutoTokenizer.from_pretrained(args.judge_model)
+    if judge_tokenizer.pad_token is None:
+        judge_tokenizer.pad_token = judge_tokenizer.eos_token
+    judge_model = AutoModelForCausalLM.from_pretrained(
+        args.judge_model,
+        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        device_map="auto",
+    )
+    judge_model.eval()
+    print("Judge model loaded.")
+
     dataset = load_dataset("eth-nlped/mathdial")
 
-    train_rows = build_rows_batched(dataset["train"], NUMBER_OF_GENERATIONS)
-    eval_rows = build_rows_batched(dataset["test"], NUMBER_OF_GENERATIONS)
-    # train_rows = build_rows(dataset["train"])
-    # eval_rows = build_rows(dataset["test"])
+    print(f"\n=== Building TRAIN rows ===", flush=True)
+    train_rows = build_rows_batched(dataset["train"], NUMBER_OF_GENERATIONS, judge_model, judge_tokenizer)
+    print(f"\n=== Building EVAL rows ===", flush=True)
+    eval_rows = build_rows_batched(dataset["test"], NUMBER_OF_GENERATIONS, judge_model, judge_tokenizer)
 
     write_jsonl(TRAIN_OUT, train_rows)
     write_jsonl(EVAL_OUT, eval_rows)
