@@ -120,22 +120,49 @@ def judge_conversation(
     conversation_raw: str,
     retries: int = 3,
 ) -> dict:
-    """Run the judge model locally and return parsed scores dict."""
-    user_content = USER_TEMPLATE.format(
-        question=question,
-        incorrect_solution=incorrect_solution,
-        conversation=format_conversation(conversation_raw),
+    """Run the judge model on a single conversation and return parsed scores dict."""
+    results = judge_conversations_batch(
+        model, tokenizer, device,
+        questions=[question],
+        incorrect_solutions=[incorrect_solution],
+        conversation_raws=[conversation_raw],
+        retries=retries,
     )
+    return results[0]
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user",   "content": user_content},
-    ]
 
-    prompt = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
-    inputs = tokenizer([prompt], return_tensors="pt").to(device)
+def judge_conversations_batch(
+    model,
+    tokenizer,
+    device,
+    questions: list,
+    incorrect_solutions: list,
+    conversation_raws: list,
+    retries: int = 3,
+) -> list:
+    """Run the judge model on a batch of conversations. Returns a list of score dicts."""
+    prompts = []
+    for question, incorrect_solution, conversation_raw in zip(questions, incorrect_solutions, conversation_raws):
+        user_content = USER_TEMPLATE.format(
+            question=question,
+            incorrect_solution=incorrect_solution,
+            conversation=format_conversation(conversation_raw),
+        )
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user",   "content": user_content},
+        ]
+        prompts.append(tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        ))
+
+    # Left-pad so all sequences end at the same position before generation
+    original_padding_side = tokenizer.padding_side
+    tokenizer.padding_side = "left"
+    inputs = tokenizer(prompts, return_tensors="pt", padding=True).to(device)
+    tokenizer.padding_side = original_padding_side
+
+    prompt_lengths = inputs.input_ids.shape[1]
 
     for attempt in range(retries):
         try:
@@ -143,25 +170,31 @@ def judge_conversation(
                 output_ids = model.generate(
                     **inputs,
                     max_new_tokens=512,
-                    do_sample=False,          # greedy for reproducibility
-                    temperature=1.0,          # ignored when do_sample=False
+                    do_sample=False,
+                    temperature=1.0,
                     pad_token_id=tokenizer.eos_token_id,
                     eos_token_id=tokenizer.eos_token_id,
                 )
 
-            new_tokens = output_ids[0][len(inputs.input_ids[0]):]
-            text = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
-            scores = extract_json(text)
-
-            for dim in DIMENSIONS:
-                if dim not in scores:
-                    raise ValueError(f"Missing key '{dim}' in judge response")
-            return scores
+            results = []
+            for i, seq in enumerate(output_ids):
+                new_tokens = seq[prompt_lengths:]
+                text = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+                try:
+                    scores = extract_json(text)
+                    for dim in DIMENSIONS:
+                        if dim not in scores:
+                            raise ValueError(f"Missing key '{dim}' in judge response")
+                    results.append(scores)
+                except Exception as e:
+                    print(f"  [item {i}] Parse failed: {e}")
+                    results.append({dim: None for dim in DIMENSIONS} | {"reasoning": "JUDGE_FAILED"})
+            return results
 
         except Exception as e:
-            print(f"  [attempt {attempt+1}/{retries}] Judge failed: {e}")
+            print(f"  [attempt {attempt+1}/{retries}] Batch generate failed: {e}")
 
-    return {dim: None for dim in DIMENSIONS} | {"reasoning": "JUDGE_FAILED"}
+    return [{dim: None for dim in DIMENSIONS} | {"reasoning": "JUDGE_FAILED"} for _ in prompts]
 
 
 def aggregate_scores(results: list[dict]) -> dict:
@@ -202,6 +235,8 @@ def get_args():
     parser.add_argument("--export_file", type=str,
                         default="../output/judge_scores.jsonl",
                         help="Where to write per-problem scores.")
+    parser.add_argument("--batch_size", type=int, default=4,
+                        help="Number of conversations to judge in one model.generate() call.")
     return parser.parse_args()
 
 
@@ -215,6 +250,8 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Loading judge model: {args.judge_model} on {device}")
     tokenizer = AutoTokenizer.from_pretrained(args.judge_model)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
         args.judge_model,
         torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
@@ -226,33 +263,39 @@ if __name__ == "__main__":
     data = read_jsonl(args.input_file)
     results = []
 
+    # Collect valid problems first
+    valid_problems = []
     for i, problem in enumerate(data):
-        qid = problem.get("qid", str(i))
-        print(f"Judging problem {i+1} (qid={qid}) ...", end=" ", flush=True)
-
         conversation_raw = problem.get(args.model_name)
         if not conversation_raw:
-            print(f"SKIP (key '{args.model_name}' not found)")
+            print(f"SKIP problem {i+1} (key '{args.model_name}' not found)")
             continue
+        valid_problems.append((i, problem))
 
-        scores = judge_conversation(
+    # Process in batches
+    for batch_start in range(0, len(valid_problems), args.batch_size):
+        batch = valid_problems[batch_start:batch_start + args.batch_size]
+        print(f"Judging problems {batch_start+1}–{batch_start+len(batch)} / {len(valid_problems)} ...", flush=True)
+
+        batch_scores = judge_conversations_batch(
             model=model,
             tokenizer=tokenizer,
             device=device,
-            question=problem.get("question", ""),
-            incorrect_solution=problem.get("student_incorrect_solution", ""),
-            conversation_raw=conversation_raw,
+            questions=[p.get("question", "") for _, p in batch],
+            incorrect_solutions=[p.get("student_incorrect_solution", "") for _, p in batch],
+            conversation_raws=[p.get(args.model_name) for _, p in batch],
         )
 
-        print({dim: scores.get(dim) for dim in DIMENSIONS})
-
-        results.append({
-            "qid": qid,
-            "question": problem.get("question", ""),
-            "model_name": args.model_name,
-            "judge_model": args.judge_model,
-            "judge_scores": scores,
-        })
+        for (i, problem), scores in zip(batch, batch_scores):
+            qid = problem.get("qid", str(i))
+            print(f"  qid={qid}: ", {dim: scores.get(dim) for dim in DIMENSIONS})
+            results.append({
+                "qid": qid,
+                "question": problem.get("question", ""),
+                "model_name": args.model_name,
+                "judge_model": args.judge_model,
+                "judge_scores": scores,
+            })
 
     # Write per-problem results
     os.makedirs(os.path.dirname(os.path.abspath(args.export_file)), exist_ok=True)
