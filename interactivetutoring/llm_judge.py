@@ -52,15 +52,8 @@ Score the TEACHER'S responses on five dimensions using integers 1–5:
 4. Conciseness (1=lots of padding/praise/off-topic text, 5=tight focused feedback)
 5. Overall quality (1=poor tutor, 5=excellent tutor)
 
-Respond ONLY with a JSON object in exactly this format (no extra text):
-{
-  "socratic_guidance": <int 1-5>,
-  "mathematical_accuracy": <int 1-5>,
-  "relevance": <int 1-5>,
-  "conciseness": <int 1-5>,
-  "overall_quality": <int 1-5>,
-  "reasoning": "<one short paragraph explaining the scores>"
-}
+Respond ONLY with a JSON object in exactly this format (no extra text, no reasoning, no markdown):
+{"socratic_guidance": <int 1-5>, "mathematical_accuracy": <int 1-5>, "relevance": <int 1-5>, "conciseness": <int 1-5>, "overall_quality": <int 1-5>}
 """
 
 USER_TEMPLATE = """\
@@ -116,6 +109,113 @@ def extract_json(text: str) -> dict:
             pass
 
     raise ValueError(f"No valid JSON found in model output:\n{text[:500]}")
+
+
+# ---------------------------------------------------------------------------
+# Lightweight single-response judge (for pairwise DPO ranking)
+# ---------------------------------------------------------------------------
+
+RESPONSE_SYSTEM_PROMPT = """\
+You are an expert mathematics education researcher. Score a single teacher response on five dimensions (integers 1–5).
+
+1. Socratic guidance (1=gives away answer, 5=only hints/questions)
+2. Mathematical accuracy (1=errors present, 5=fully correct)
+3. Relevance (1=ignores student's mistake, 5=directly addresses it)
+4. Conciseness (1=padded/off-topic, 5=tight focused feedback)
+5. Overall quality (1=poor, 5=excellent)
+
+Respond ONLY with JSON, no extra text:
+{"socratic_guidance": <int 1-5>, "mathematical_accuracy": <int 1-5>, "relevance": <int 1-5>, "conciseness": <int 1-5>, "overall_quality": <int 1-5>}
+"""
+
+RESPONSE_USER_TEMPLATE = """\
+## Math problem
+{question}
+
+## Student's incorrect solution
+{incorrect_solution}
+
+## Last student message
+{last_student_message}
+
+## Teacher response to score
+{teacher_response}
+"""
+
+
+def judge_teacher_responses_batch(
+    model,
+    tokenizer,
+    device,
+    questions: list,
+    incorrect_solutions: list,
+    last_student_messages: list,
+    teacher_responses: list,
+    retries: int = 3,
+) -> list:
+    """Score a batch of individual teacher responses for pairwise DPO ranking.
+
+    Much cheaper than judge_conversations_batch — only the last student message
+    and the teacher response under evaluation are included in the prompt.
+
+    Returns a list of score dicts (None values on parse failure).
+    """
+    prompts = []
+    for question, incorrect_solution, last_student_msg, teacher_response in zip(
+        questions, incorrect_solutions, last_student_messages, teacher_responses
+    ):
+        user_content = RESPONSE_USER_TEMPLATE.format(
+            question=question,
+            incorrect_solution=incorrect_solution,
+            last_student_message=last_student_msg,
+            teacher_response=teacher_response,
+        )
+        messages = [
+            {"role": "system", "content": RESPONSE_SYSTEM_PROMPT},
+            {"role": "user",   "content": user_content},
+        ]
+        prompts.append(tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        ))
+
+    original_padding_side = tokenizer.padding_side
+    tokenizer.padding_side = "left"
+    inputs = tokenizer(prompts, return_tensors="pt", padding=True).to(device)
+    tokenizer.padding_side = original_padding_side
+
+    prompt_lengths = inputs.input_ids.shape[1]
+
+    for attempt in range(retries):
+        try:
+            with torch.no_grad():
+                output_ids = model.generate(
+                    **inputs,
+                    max_new_tokens=80,
+                    do_sample=False,
+                    temperature=1.0,
+                    pad_token_id=tokenizer.eos_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
+                )
+
+            results = []
+            for i, seq in enumerate(output_ids):
+                new_tokens = seq[prompt_lengths:]
+                text = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+                try:
+                    scores = extract_json(text)
+                    for dim in DIMENSIONS:
+                        if dim not in scores:
+                            raise ValueError(f"Missing key '{dim}' in judge response")
+                    results.append(scores)
+                except Exception as e:
+                    print(f"  [item {i}] Parse failed: {e}")
+                    results.append({dim: None for dim in DIMENSIONS})
+            return results
+
+        except Exception as e:
+            print(f"  [attempt {attempt+1}/{retries}] Batch generate failed: {e}")
+
+    return [{dim: None for dim in DIMENSIONS} for _ in prompts]
 
 
 def judge_conversation(
@@ -176,7 +276,7 @@ def judge_conversations_batch(
             with torch.no_grad():
                 output_ids = model.generate(
                     **inputs,
-                    max_new_tokens=512,
+                    max_new_tokens=80,
                     do_sample=False,
                     temperature=1.0,
                     pad_token_id=tokenizer.eos_token_id,
