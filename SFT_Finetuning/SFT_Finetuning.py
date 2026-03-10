@@ -1,8 +1,19 @@
+import argparse
 import torch
 from datasets import load_dataset, Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM, DataCollatorForSeq2Seq
 from trl import SFTTrainer, SFTConfig
 from tqdm import tqdm
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--model_path", type=str, default="Qwen/Qwen2.5-1.5B-Instruct",
+                    help="HuggingFace model ID or local path to use as the base model for SFT")
+parser.add_argument("--output_dir", type=str,
+                    default="./models/Qwen_SFT_model/finetuned_weighted_qwen_instruct_teacher_model",
+                    help="Directory to save the fine-tuned model")
+parser.add_argument("--weighted", action="store_true",
+                    help="Use self-score weighted sampling during training (default: uniform sampling)")
+args = parser.parse_args()
 ####################################################################################################################
 #This code takes the pretrained Qwen model and fine-tunes it on the MathDial dataset. 
 #The students Ground truth is added to the system prompt.
@@ -11,9 +22,9 @@ from tqdm import tqdm
 tokenization_length = 1024
 
 # Load model and tokenizer. You could also use a different model here.
-tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct")
+tokenizer = AutoTokenizer.from_pretrained(args.model_path)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct").to(device)
+model = AutoModelForCausalLM.from_pretrained(args.model_path).to(device)
 
 # Load MathDial dataset
 # dataset = load_dataset("eth-nlped/mathdial-chat")
@@ -125,7 +136,7 @@ test_dataset_hf = prepare_conversations(dataset["test"])
 
 # Training configuration
 training_config = SFTConfig(
-    output_dir=f"./models/Qwen_SFT_model/finetuned_weighted_qwen_instruct_teacher_model",
+    output_dir=args.output_dir,
     per_device_train_batch_size=8,
     num_train_epochs=3,
     logging_steps=10,
@@ -166,7 +177,13 @@ def custom_dataloader_function(self):
                                        num_workers=self.args.dataloader_num_workers,
                                        pin_memory=self.args.dataloader_pin_memory)
 
-trainer.get_train_dataloader = custom_dataloader_function.__get__(trainer)
+if args.weighted:
+    print("Using self-score weighted sampling.")
+    trainer.get_train_dataloader = custom_dataloader_function.__get__(trainer)
+else:
+    print("Using uniform sampling (no weighting).")
+    # Remove the weight column so the default dataloader doesn't choke on it
+    trainer.train_dataset = trainer.train_dataset.remove_columns(["weight"])
 ##################################################################
 
 # Train model
@@ -175,5 +192,5 @@ trainer.train()
 print("Training complete")
 
 # Save fine-tuned model
-trainer.save_model(f"./models/Qwen_SFT_model/finetuned_weighted_qwen_instruct_teacher_model")
-tokenizer.save_pretrained(f"./models/Qwen_SFT_model/finetuned_weighted_qwen_instruct_teacher_model")
+trainer.save_model(args.output_dir)
+tokenizer.save_pretrained(args.output_dir)

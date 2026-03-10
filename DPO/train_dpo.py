@@ -8,6 +8,8 @@ from trl import DPOConfig, DPOTrainer
 parser = argparse.ArgumentParser()
 parser.add_argument("--sft_checkpoint", type=str, default="./models/Qwen_SFT_model/finetuned_unweighted_qwen_instruct_teacher_model", help="Path to the SFT checkpoint")
 parser.add_argument("--output_dir", type=str, default="./models/dpo_qwen_tutor", help="Directory to save checkpoints and final model")
+parser.add_argument("--train_data", type=str, default="./data/preference-data/train.jsonl", help="Path to training preference data JSONL")
+parser.add_argument("--eval_data", type=str, default="./data/preference-data/eval.jsonl", help="Path to eval preference data JSONL")
 args = parser.parse_args()
 
 model_name_or_path = args.sft_checkpoint
@@ -30,12 +32,12 @@ ref_model = AutoModelForCausalLM.from_pretrained(
 
 train_dataset = load_dataset(
     "json",
-    data_files={"train": "./data/preference-data/train.jsonl"},
+    data_files={"train": args.train_data},
 )["train"]
 
 eval_dataset = load_dataset(
     "json",
-    data_files={"eval": "./data/preference-data/eval.jsonl"},
+    data_files={"eval": args.eval_data},
 )["eval"]
 
 training_args = DPOConfig(

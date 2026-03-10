@@ -1,0 +1,224 @@
+[
+  {
+    "label": "human",
+    "n": 599,
+    "total_turns": {
+      "count": 599,
+      "mean": 11.73,
+      "median": 11.0,
+      "std": 5.54,
+      "min": 4.0,
+      "p25": 7.0,
+      "p75": 16.0,
+      "max": 46.0
+    },
+    "teacher_turns": {
+      "count": 599,
+      "mean": 6.18,
+      "median": 6.0,
+      "std": 2.74,
+      "min": 3.0,
+      "p25": 4.0,
+      "p75": 8.0,
+      "max": 23.0
+    },
+    "student_turns": {
+      "count": 599,
+      "mean": 5.56,
+      "median": 5.0,
+      "std": 2.85,
+      "min": 1.0,
+      "p25": 3.0,
+      "p75": 7.0,
+      "max": 23.0
+    },
+    "teacher_char_len": {
+      "count": 3699,
+      "mean": 79.25,
+      "median": 63.0,
+      "std": 58.17,
+      "min": 0.0,
+      "p25": 41.0,
+      "p75": 105.0,
+      "max": 573.0
+    },
+    "teacher_word_len": {
+      "count": 3699,
+      "mean": 15.73,
+      "median": 13.0,
+      "std": 11.46,
+      "min": 0.0,
+      "p25": 8.0,
+      "p75": 21.0,
+      "max": 108.0
+    },
+    "student_char_len": {
+      "count": 3329,
+      "mean": 187.78,
+      "median": 154.0,
+      "std": 132.37,
+      "min": 1.0,
+      "p25": 87.0,
+      "p75": 267.0,
+      "max": 800.0
+    },
+    "student_word_len": {
+      "count": 3329,
+      "mean": 38.83,
+      "median": 32.0,
+      "std": 26.94,
+      "min": 1.0,
+      "p25": 18.0,
+      "p75": 55.0,
+      "max": 163.0
+    }
+  },
+  {
+    "label": "baseline",
+    "n": 599,
+    "total_turns": {
+      "count": 599,
+      "mean": 9.0,
+      "median": 9.0,
+      "std": 0.0,
+      "min": 9.0,
+      "p25": 9.0,
+      "p75": 9.0,
+      "max": 9.0
+    },
+    "teacher_turns": {
+      "count": 599,
+      "mean": 5.0,
+      "median": 5.0,
+      "std": 0.0,
+      "min": 5.0,
+      "p25": 5.0,
+      "p75": 5.0,
+      "max": 5.0
+    },
+    "student_turns": {
+      "count": 599,
+      "mean": 4.0,
+      "median": 4.0,
+      "std": 0.0,
+      "min": 4.0,
+      "p25": 4.0,
+      "p75": 4.0,
+      "max": 4.0
+    },
+    "teacher_char_len": {
+      "count": 2995,
+      "mean": 319.13,
+      "median": 152.0,
+      "std": 336.96,
+      "min": 8.0,
+      "p25": 84.5,
+      "p75": 474.0,
+      "max": 1400.0
+    },
+    "teacher_word_len": {
+      "count": 2995,
+      "mean": 53.39,
+      "median": 26.0,
+      "std": 55.46,
+      "min": 2.0,
+      "p25": 15.0,
+      "p75": 77.0,
+      "max": 206.0
+    },
+    "student_char_len": {
+      "count": 2396,
+      "mean": 166.43,
+      "median": 105.0,
+      "std": 143.27,
+      "min": 3.0,
+      "p25": 56.0,
+      "p75": 297.25,
+      "max": 544.0
+    },
+    "student_word_len": {
+      "count": 2396,
+      "mean": 32.72,
+      "median": 19.0,
+      "std": 29.45,
+      "min": 1.0,
+      "p25": 10.0,
+      "p75": 60.0,
+      "max": 102.0
+    }
+  },
+  {
+    "label": "SFT",
+    "n": 599,
+    "total_turns": {
+      "count": 599,
+      "mean": 9.0,
+      "median": 9.0,
+      "std": 0.0,
+      "min": 9.0,
+      "p25": 9.0,
+      "p75": 9.0,
+      "max": 9.0
+    },
+    "teacher_turns": {
+      "count": 599,
+      "mean": 5.0,
+      "median": 5.0,
+      "std": 0.0,
+      "min": 5.0,
+      "p25": 5.0,
+      "p75": 5.0,
+      "max": 5.0
+    },
+    "student_turns": {
+      "count": 599,
+      "mean": 4.0,
+      "median": 4.0,
+      "std": 0.0,
+      "min": 4.0,
+      "p25": 4.0,
+      "p75": 4.0,
+      "max": 4.0
+    },
+    "teacher_char_len": {
+      "count": 2995,
+      "mean": 82.64,
+      "median": 67.0,
+      "std": 49.42,
+      "min": 7.0,
+      "p25": 49.0,
+      "p75": 105.0,
+      "max": 345.0
+    },
+    "teacher_word_len": {
+      "count": 2995,
+      "mean": 16.19,
+      "median": 13.0,
+      "std": 9.86,
+      "min": 1.0,
+      "p25": 9.0,
+      "p75": 21.0,
+      "max": 67.0
+    },
+    "student_char_len": {
+      "count": 2396,
+      "mean": 234.3,
+      "median": 233.5,
+      "std": 136.85,
+      "min": 4.0,
+      "p25": 110.0,
+      "p75": 359.25,
+      "max": 667.0
+    },
+    "student_word_len": {
+      "count": 2396,
+      "mean": 47.81,
+      "median": 47.0,
+      "std": 27.66,
+      "min": 1.0,
+      "p25": 23.0,
+      "p75": 74.0,
+      "max": 111.0
+    }
+  }
+]

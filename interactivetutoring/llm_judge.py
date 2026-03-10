@@ -29,6 +29,7 @@ import sys
 
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from tqdm import tqdm
 
 from utils import read_jsonl
 
@@ -380,7 +381,7 @@ if __name__ == "__main__":
         valid_problems.append((i, problem))
 
     # Process in batches
-    for batch_start in range(0, len(valid_problems), args.batch_size):
+    for batch_start in tqdm(range(0, len(valid_problems), args.batch_size), desc="Judging", unit="batch"):
         batch = valid_problems[batch_start:batch_start + args.batch_size]
         print(f"Judging problems {batch_start+1}–{batch_start+len(batch)} / {len(valid_problems)} ...", flush=True)
 
