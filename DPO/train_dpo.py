@@ -35,10 +35,10 @@ train_dataset = load_dataset(
     data_files={"train": args.train_data},
 )["train"]
 
-eval_dataset = load_dataset(
-    "json",
-    data_files={"eval": args.eval_data},
-)["eval"]
+# eval_dataset = load_dataset(
+#     "json",
+#     data_files={"eval": args.eval_data},
+# )["eval"]
 
 training_args = DPOConfig(
     output_dir=args.output_dir,
@@ -47,9 +47,8 @@ training_args = DPOConfig(
     gradient_accumulation_steps=8,   # 8
     learning_rate=5e-7,
     num_train_epochs=1,
-    logging_steps=10,  # 10
-    eval_steps=100,     # 100
-    save_steps=100,     # 100
+    logging_steps=10,
+    save_steps=1000,
     bf16=True,
     remove_unused_columns=False,
     max_length=2048,
@@ -65,7 +64,6 @@ trainer = DPOTrainer(
     args=training_args,
     processing_class=tokenizer,
     train_dataset=train_dataset,
-    eval_dataset=eval_dataset,
 )
 
 trainer.train()

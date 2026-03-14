@@ -83,8 +83,10 @@ DIMENSIONS = [
 # ---------------------------------------------------------------------------
 
 def format_conversation(raw: str) -> str:
-    """Convert <EOM>-delimited string to a readable numbered dialogue."""
-    turns = [t.strip() for t in raw.split("<EOM>") if t.strip()]
+    """Convert <EOM>- or |EOM|-delimited string to a readable numbered dialogue."""
+    # MathDial original data uses |EOM|; generated conversations use <EOM>
+    delimiter = "|EOM|" if "|EOM|" in raw else "<EOM>"
+    turns = [t.strip() for t in raw.split(delimiter) if t.strip()]
     return "\n".join(f"[{i+1}] {turn}" for i, turn in enumerate(turns))
 
 
