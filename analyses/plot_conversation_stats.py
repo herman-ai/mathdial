@@ -44,12 +44,12 @@ def plot_metric(stats, key, title, ylabel, output_dir):
                 bar.get_x() + bar.get_width() / 2,
                 bar.get_height() + 0.01 * max(values),
                 f"{val:.1f}",
-                ha="center", va="bottom", fontsize=13, fontweight="bold"
+                ha="center", va="bottom", fontsize=16, fontweight="bold"
             )
 
     ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=0, ha="right", fontsize=13)
-    ax.set_ylabel(ylabel, fontsize=14)
+    ax.set_xticklabels(labels, rotation=0, ha="center", fontsize=16)
+    ax.set_ylabel(ylabel, fontsize=16)
     ax.set_title(title, fontsize=16, fontweight="bold", pad=12)
     ax.set_ylim(0, max(values) * 1.18)
     ax.yaxis.grid(True, linestyle="--", alpha=0.5)
