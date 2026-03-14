@@ -2,6 +2,7 @@ import argparse
 import json
 import torch
 import sys
+import os
 
 # Workaround for torchvision version conflicts in containers
 # Remove system package paths that might have incompatible torchvision
@@ -78,10 +79,11 @@ class QwenStudent:
 
 
 class QwenTeacher:
-    def __init__(self, model, tokenizer, device):
+    def __init__(self, model, tokenizer, device, enable_natural_stop: bool = False):
         self.model = model
         self.tokenizer = tokenizer
         self.device = device
+        self.enable_natural_stop = enable_natural_stop
 
         self.generation_config = GenerationConfig(
             max_new_tokens=256,
@@ -99,12 +101,19 @@ class QwenTeacher:
     
     def build_prompt(self, history: History, question: str, ground_truth_solution: str) -> str:
         """Build prompt for teacher response without calling the model"""
+        natural_stop_instruction = ""
+        if self.enable_natural_stop:
+            natural_stop_instruction = (
+                "\nWhen the student understands the solution well enough, end your final tutor message with END_TUTORING."
+            )
+
         conversation = [
             {
                 "role": "system",
                 "content": f"You are a helpful math tutor. Guide the student through solving this problem: {question}\n"
                            f"The correct solution is: {ground_truth_solution}\n"
                            f"Help the student understand their mistakes and guide them toward the correct solution."
+                           f"{natural_stop_instruction}"
             }
         ]
         
@@ -181,13 +190,44 @@ def get_args():
     parser.add_argument("--student_model_path", type=str, default=None,
                         help="Path to student Qwen model. Defaults to --model_path if not set.")
     parser.add_argument("--max_utterances", type=int, default=4)
+    parser.add_argument("--enable_natural_stop", action="store_true",
+                        help="Allow conversations to stop before max_utterances when the teacher signals completion.")
     return parser.parse_args()
 
 
+def should_stop_conversation(teacher_response: str) -> bool:
+    response = (teacher_response or "").strip()
+    if not response:
+        return False
+
+    response_lower = response.lower()
+    stop_tokens = ["end_tutoring", "<end_tutoring>", "[end_tutoring]"]
+    if any(token in response_lower for token in stop_tokens):
+        return True
+
+    closing_phrases = [
+        "great work",
+        "good job",
+        "nice work",
+        "you got it",
+        "that is correct",
+        "that's correct",
+        "we can stop here",
+        "let me know if you have any other questions",
+        "you understand this now",
+    ]
+    has_closing_phrase = any(phrase in response_lower for phrase in closing_phrases)
+    asks_followup_question = "?" in response
+    return has_closing_phrase and not asks_followup_question
+
+
 def export_to_jsonl(data, output_file):
-    with open(output_file, 'w', encoding='utf-8') as output_file:
+    output_dir = os.path.dirname(output_file)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    with open(output_file, 'w', encoding='utf-8') as out_f:
         for conversation in data:
-            output_file.write(json.dumps(conversation) + '\n')
+            out_f.write(json.dumps(conversation) + '\n')
 
 
 def print_conversation(question: str, ground_truth_solution: str, incorrect_solution: str, history: History):
@@ -227,7 +267,7 @@ if __name__ == '__main__':
     data = read_jsonl(args.input_file)
 
     student = QwenStudent(student_model, student_tokenizer, device)
-    teacher = QwenTeacher(teacher_model, teacher_tokenizer, device)
+    teacher = QwenTeacher(teacher_model, teacher_tokenizer, device, enable_natural_stop=args.enable_natural_stop)
 
     for problem in tqdm(data):
         question = problem["question"]
@@ -243,9 +283,12 @@ if __name__ == '__main__':
             student_message = Message(Roles.STUDENT, student.response(history, question, incorrect_solution))
             history.add_message(student_message)
 
-            teacher_response_message = Message(Roles.TEACHER,
-                                               teacher.response(history, question, ground_truth_solution))
+            teacher_response_text = teacher.response(history, question, ground_truth_solution)
+            teacher_response_message = Message(Roles.TEACHER, teacher_response_text)
             history.add_message(teacher_response_message)
+
+            if args.enable_natural_stop and should_stop_conversation(teacher_response_text):
+                break
 
         problem[args.model_name] = history.to_delimited_string("<EOM>")
         conversations.append(problem)

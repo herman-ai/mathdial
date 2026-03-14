@@ -212,11 +212,13 @@ def judge_teacher_responses_batch(
                     results.append(scores)
                 except Exception as e:
                     print(f"  [item {i}] Parse failed: {e}")
+                    print(f"  [item {i}] Raw judge output:\n{text if text else '<EMPTY_OUTPUT>'}")
                     results.append({dim: None for dim in DIMENSIONS})
             return results
 
         except Exception as e:
             print(f"  [attempt {attempt+1}/{retries}] Batch generate failed: {e}")
+            print("  Raw judge output unavailable: generation failed before decode.")
 
     return [{dim: None for dim in DIMENSIONS} for _ in prompts]
 
@@ -298,11 +300,13 @@ def judge_conversations_batch(
                     results.append(scores)
                 except Exception as e:
                     print(f"  [item {i}] Parse failed: {e}")
+                    print(f"  [item {i}] Raw judge output:\n{text if text else '<EMPTY_OUTPUT>'}")
                     results.append({dim: None for dim in DIMENSIONS} | {"reasoning": "JUDGE_FAILED"})
             return results
 
         except Exception as e:
             print(f"  [attempt {attempt+1}/{retries}] Batch generate failed: {e}")
+            print("  Raw judge output unavailable: generation failed before decode.")
 
     return [{dim: None for dim in DIMENSIONS} | {"reasoning": "JUDGE_FAILED"} for _ in prompts]
 

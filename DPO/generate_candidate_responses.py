@@ -56,6 +56,8 @@ def parse_args():
                         help="Number of generations to run in one model.generate() call")
     parser.add_argument("--output_file", type=str, default=None,
                         help="Output JSONL path. Defaults to data/candidate_responses/<split>_candidates.jsonl")
+    parser.add_argument("--max_conversations", type=int, default=0,
+                        help="If >0, process only first N conversations from the split (for smoke tests)")
     return parser.parse_args()
 
 
@@ -102,6 +104,9 @@ if __name__ == "__main__":
     print(f"Teacher model loaded on {device}", flush=True)
 
     dataset = load_dataset("eth-nlped/mathdial")[args.split]
+    if args.max_conversations and args.max_conversations > 0:
+        cap = min(args.max_conversations, len(dataset))
+        dataset = dataset.select(range(cap))
     total_convs = len(dataset)
     rows = []
 
@@ -140,6 +145,7 @@ if __name__ == "__main__":
                         "question": question,
                         "solution": solution,
                         "conversation_context": conversation_context,
+                        "expert_response": turn_text.strip(),
                         "responses": all_responses,
                     })
 

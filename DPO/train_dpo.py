@@ -7,12 +7,54 @@ from trl import DPOConfig, DPOTrainer
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--sft_checkpoint", type=str, default="./models/Qwen_SFT_model/finetuned_unweighted_qwen_instruct_teacher_model", help="Path to the SFT checkpoint")
+parser.add_argument(
+    "--ref_checkpoint",
+    type=str,
+    default="__SAME_AS_SFT__",
+    help="Reference policy checkpoint. Use __SAME_AS_SFT__ to keep old behavior.",
+)
 parser.add_argument("--output_dir", type=str, default="./models/dpo_qwen_tutor", help="Directory to save checkpoints and final model")
 parser.add_argument("--train_data", type=str, default="./data/preference-data/train.jsonl", help="Path to training preference data JSONL")
 parser.add_argument("--eval_data", type=str, default="./data/preference-data/eval.jsonl", help="Path to eval preference data JSONL")
+parser.add_argument(
+    "--force_retrain",
+    action="store_true",
+    help="If set, train even when output_dir/final already exists",
+)
+parser.add_argument(
+    "--resume_from_checkpoint",
+    type=str,
+    default="auto",
+    help="Checkpoint resume mode: 'auto' (latest checkpoint-* in output_dir), 'none', or explicit checkpoint path",
+)
 args = parser.parse_args()
 
+final_dir = os.path.join(args.output_dir, "final")
+if os.path.isdir(final_dir) and not args.force_retrain:
+    print(f"Final checkpoint already exists at {final_dir}; skipping training. Use --force_retrain to override.")
+    raise SystemExit(0)
+
+
+def get_latest_checkpoint(output_dir: str):
+    if not os.path.isdir(output_dir):
+        return None
+    latest_step = -1
+    latest_path = None
+    for name in os.listdir(output_dir):
+        if not name.startswith("checkpoint-"):
+            continue
+        try:
+            step = int(name.split("checkpoint-")[-1])
+        except ValueError:
+            continue
+        path = os.path.join(output_dir, name)
+        if os.path.isdir(path) and step > latest_step:
+            latest_step = step
+            latest_path = path
+    return latest_path
+
 model_name_or_path = args.sft_checkpoint
+ref_name_or_path = args.sft_checkpoint if args.ref_checkpoint in ("", "__SAME_AS_SFT__") else args.ref_checkpoint
 
 tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, use_fast=True)
 if tokenizer.pad_token is None:
@@ -25,7 +67,7 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 
 ref_model = AutoModelForCausalLM.from_pretrained(
-    model_name_or_path,
+    ref_name_or_path,
     torch_dtype="bfloat16",
     device_map="auto",
 )
@@ -66,7 +108,21 @@ trainer = DPOTrainer(
     train_dataset=train_dataset,
 )
 
-trainer.train()
+resume_arg = None
+if args.resume_from_checkpoint.lower() == "auto":
+    resume_arg = get_latest_checkpoint(args.output_dir)
+elif args.resume_from_checkpoint.lower() == "none":
+    resume_arg = None
+else:
+    resume_arg = args.resume_from_checkpoint
+
+if resume_arg:
+    print(f"Resuming from checkpoint: {resume_arg}")
+    trainer.train(resume_from_checkpoint=resume_arg)
+else:
+    print("Starting fresh training run (no checkpoint resume).")
+    trainer.train()
+
 trainer.save_model(os.path.join(args.output_dir, "final"))
 tokenizer.save_pretrained(os.path.join(args.output_dir, "final"))
 
