@@ -91,7 +91,7 @@ def main():
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_visible(True)
         ax.spines['bottom'].set_visible(True)
-        plt.savefig('self_typical_confusion_distribution.png')
+        plt.savefig('plots/dataset_stats/self_typical_confusion_distribution.png')
     # plt.show()
     elif plot_dimension == 'self-typical-interactions':
         bin_edges = np.arange(0.5, 6, 1)
@@ -123,7 +123,7 @@ def main():
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_visible(True)
         ax.spines['bottom'].set_visible(True)
-        plt.savefig('self_typical_interactions_distribution.png')
+        plt.savefig('plots/dataset_stats/self_typical_interactions_distribution.png')
     elif plot_dimension == 'self-correctness':
         # For self-correctness, count 'Yes' and 'No' and plot as bar chart
         train_counts = pd.Series(correctness_train_data).value_counts().sort_index()
@@ -147,7 +147,7 @@ def main():
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_visible(True)
         ax.spines['bottom'].set_visible(True)
-        plt.savefig('self_correctness_distribution.png')
+        plt.savefig('plots/dataset_stats/self_correctness_distribution.png')
     else:
         # For conversation length, plot as histogram
         print(np.array(conversation_length_train_data).shape, np.array(conversation_length_test_data).shape)
@@ -180,7 +180,7 @@ def main():
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_visible(True)
         ax.spines['bottom'].set_visible(True)
-        plt.savefig('conversation_length_distribution.png')
+        plt.savefig('plots/conversation_stats/conversation_length_distribution.png')
 
 
 if __name__ == "__main__":
