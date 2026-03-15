@@ -67,6 +67,8 @@ def parse_args():
                         help="Fraction of intermodel pairs to add (relative to current-round pair count)")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for pair mixing subsampling")
+    parser.add_argument("--max_expert_demos", type=int, default=0,
+                        help="If >0 and pair_mode=expert, use at most this many expert demonstration rows")
     return parser.parse_args()
 
 
@@ -133,8 +135,28 @@ if __name__ == "__main__":
 
     if args.pair_mode == "expert":
         print(f"\n=== Building expert-vs-model pairs from {total} candidate rows ===", flush=True)
+        expert_row_indices = [
+            idx for idx, row in enumerate(candidates)
+            if (row.get("expert_response") or "").strip() and row.get("responses")
+        ]
+        if args.max_expert_demos > 0 and len(expert_row_indices) > args.max_expert_demos:
+            selected_indices = set(rng.sample(expert_row_indices, args.max_expert_demos))
+            print(
+                f"[Expert] Using {args.max_expert_demos}/{len(expert_row_indices)} expert demonstrations "
+                f"(seed={args.seed})",
+                flush=True,
+            )
+        else:
+            selected_indices = set(expert_row_indices)
+            print(
+                f"[Expert] Using all {len(selected_indices)} available expert demonstrations",
+                flush=True,
+            )
+
         missing_expert = 0
         for row_idx, row in enumerate(candidates):
+            if row_idx not in selected_indices:
+                continue
             prompt = row.get("prompt", "")
             expert = (row.get("expert_response") or "").strip()
             responses = row.get("responses", [])
@@ -148,6 +170,7 @@ if __name__ == "__main__":
             for response in responses:
                 rejected = (response or "").strip()
                 if not rejected or rejected == expert:
+                    print(f"[Warning] Skipping empty or identical response for row {row_idx}, response: {rejected}, expert: {expert}", flush=True)
                     continue
                 current_pairs.append({"prompt": prompt, "chosen": expert, "rejected": rejected})
             if row_idx % 200 == 0:
