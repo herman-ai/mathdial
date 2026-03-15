@@ -29,14 +29,21 @@ if [[ ! -f "$SCRIPT" ]]; then
 fi
 
 # ── Helper: compute output PDF path from input file ───────────────────────────
-# Strips "qwen_judge_scores_" prefix and appends "_score_distributions.pdf"
+# Mirrors the subdirectory structure of the input under ROOT_OUTPUT_DIR,
+# and strips "judge_scores_" / "_judge_scores" from the filename.
 make_output_path() {
     local input_file="$1"
-    local out_dir="$2"
-    local stem
+    local stem subdir out_dir clean
     stem=$(basename "$input_file" .jsonl)
-    local clean="${stem#qwen_judge_scores_}"
-    echo "${out_dir}/qwen_${clean}_score_distributions.pdf"
+    # Preserve subdirectory relative to ROOT_INPUT_DIR
+    subdir=$(dirname "$input_file")
+    subdir="${subdir#$ROOT_INPUT_DIR}"   # strip leading input root
+    subdir="${subdir#/}"                  # strip leading slash if any
+    out_dir="$ROOT_OUTPUT_DIR${subdir:+/$subdir}"
+    # Remove "judge_scores_" or "_judge_scores" wherever they appear
+    clean="${stem/judge_scores_/}"
+    clean="${clean/_judge_scores/}"
+    echo "${out_dir}/${clean}_score_distributions.pdf"
 }
 
 # ── Build list of (input, output) pairs ──────────────────────────────────────
@@ -45,11 +52,11 @@ shopt -s nullglob
 declare -a input_files=()
 declare -a output_files=()
 
-# Files directly in ../output/ (subfolders like dpo/ are intentionally excluded)
-for f in "$ROOT_INPUT_DIR"/*judge_scores*.jsonl; do
+# Recursively find all *judge_scores*.jsonl under ROOT_INPUT_DIR
+while IFS= read -r -d '' f; do
     input_files+=("$f")
-    output_files+=("$(make_output_path "$f" "$ROOT_OUTPUT_DIR")")
-done
+    output_files+=("$(make_output_path "$f")")
+done < <(find "$ROOT_INPUT_DIR" -name "*judge_scores*.jsonl" -print0 | sort -z)
 
 if [[ ${#input_files[@]} -eq 0 ]]; then
     echo "[WARN] No *judge_scores*.jsonl files found under $ROOT_INPUT_DIR"
