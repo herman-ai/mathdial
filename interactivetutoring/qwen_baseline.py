@@ -192,6 +192,8 @@ def get_args():
     parser.add_argument("--max_utterances", type=int, default=4)
     parser.add_argument("--enable_natural_stop", action="store_true",
                         help="Allow conversations to stop before max_utterances when the teacher signals completion.")
+    parser.add_argument("--max_conversations", type=int, default=0,
+                        help="If >0, process only the first N problems from the input file.")
     return parser.parse_args()
 
 
@@ -265,6 +267,8 @@ if __name__ == '__main__':
 
     conversations = []
     data = read_jsonl(args.input_file)
+    if args.max_conversations and args.max_conversations > 0:
+        data = data[:args.max_conversations]
 
     student = QwenStudent(student_model, student_tokenizer, device)
     teacher = QwenTeacher(teacher_model, teacher_tokenizer, device, enable_natural_stop=args.enable_natural_stop)

@@ -84,19 +84,22 @@ train_dataset = load_dataset(
 
 training_args = DPOConfig(
     output_dir=args.output_dir,
-    per_device_train_batch_size=2,
-    per_device_eval_batch_size=2,
-    gradient_accumulation_steps=8,   # 8
-    learning_rate=5e-7,
-    num_train_epochs=1,
-    logging_steps=10,
-    save_steps=1000,
+    # DITTO paper (Appendix C, Table 5): ~24 effective batch size, 40 grad steps
+    per_device_train_batch_size=3,
+    per_device_eval_batch_size=3,
+    gradient_accumulation_steps=8,   # effective batch = 3 * 8 = 24
+    learning_rate=1e-6,
+    max_steps=40,                    # DITTO: 40 DPO gradient steps per round
+    logging_steps=5,
+    save_steps=40,                   # save at end of the 40 steps
     bf16=True,
     remove_unused_columns=False,
     max_length=2048,
     max_prompt_length=1536,
     max_completion_length=512,
-    beta=0.1,
+    beta=0.05,                       # DITTO: beta=0.05
+    lr_scheduler_type="constant_with_warmup",  # DITTO: constant_with_warmup
+    warmup_ratio=0.25,               # DITTO: warmup_ratio=0.25
     report_to="none",
 )
 
