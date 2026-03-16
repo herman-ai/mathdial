@@ -177,41 +177,99 @@ def plot_kde_histograms(dim_values, pdf):
     plt.close(fig)
 
 
-def plot_weighted_avg(wa_values, pdf):
+def plot_weighted_avg(wa_values, human_wa_values, pdf):
     """Page 3 – weighted average histogram."""
     fig, ax = plt.subplots(figsize=(9, 5))
     st = desc_stats(wa_values)
+    human_st = desc_stats(human_wa_values)
 
-    n, bins, patches = ax.hist(wa_values, bins=20, color=PALETTE[0],
-                               alpha=0.75, edgecolor="white", linewidth=0.6)
-    # KDE overlay on secondary y
+    # n, bins, patches = ax.hist(wa_values, bins=20, color=PALETTE[0],
+    #                            alpha=0.75, edgecolor="white", linewidth=0.6)
+    # # KDE overlay on secondary y
+    # ax2 = ax.twinx()
+    # xg  = np.linspace(min(wa_values) - 0.2, max(wa_values) + 0.2, 400)
+    # ax2.plot(xg, kde(wa_values, xg, bw=0.15), color=PALETTE[0], linewidth=2.5)
+    # ax2.set_ylabel("Density", fontsize=9, color=DARK)
+    # ax2.tick_params(colors=DARK, labelsize=8)
+    # ax2.spines[["top"]].set_visible(False)
+
+    # ax.axvline(st["mean"],   color="red",   linestyle="--", linewidth=1.5,
+    #            label=f"mean={st['mean']:.3f}")
+    # ax.axvline(st["median"], color="orange", linestyle=":",  linewidth=1.5,
+    #            label=f"median={st['median']:.3f}")
+    # ax.axvspan(st["p25"], st["p75"], alpha=0.12, color="blue",
+    #            label=f"IQR [{st['p25']:.2f}–{st['p75']:.2f}]")
+
+    # style_ax(ax, title="Weighted Average Score Distribution",
+    #          xlabel="Weighted Average", ylabel="Count")
+    # ax.legend(fontsize=9, frameon=False)
+
+    # # Stats box
+    # stats_text = (f"n={st['n']}   mean={st['mean']:.3f}   median={st['median']:.3f}\n"
+    #               f"std={st['std']:.3f}   min={st['min']:.2f}   max={st['max']:.2f}\n"
+    #               f"P10={st['p10']:.3f}   P90={st['p90']:.3f}")
+    # ax.text(0.98, 0.97, stats_text, transform=ax.transAxes,
+    #         fontsize=8, va="top", ha="right",
+    #         bbox=dict(boxstyle="round,pad=0.4", facecolor="white",
+    #                   edgecolor=GREY, alpha=0.8))
+
+    # fig.tight_layout()
+    # pdf.savefig(fig, bbox_inches="tight")
+    # plt.close(fig)
+
+        # Shared x range covering both distributions
+    all_vals = wa_values + human_wa_values
+    xg = np.linspace(min(all_vals) - 0.2, max(all_vals) + 0.2, 400)
+    bin_edges = np.linspace(min(all_vals) - 0.1, max(all_vals) + 0.1, 21)
+ 
+    # ax.hist(wa_values,       bins=bin_edges, color=PALETTE[0],
+    #         alpha=0.55, edgecolor="white", linewidth=0.6, label="Model")
+    # ax.hist(human_wa_values, bins=bin_edges, color=PALETTE[1],
+    #         alpha=0.55, edgecolor="white", linewidth=0.6, label="Human")
+ 
+    # KDE overlays on secondary y
     ax2 = ax.twinx()
-    xg  = np.linspace(min(wa_values) - 0.2, max(wa_values) + 0.2, 400)
-    ax2.plot(xg, kde(wa_values, xg, bw=0.15), color=PALETTE[0], linewidth=2.5)
+    ax2.plot(xg, kde(wa_values,       xg, bw=0.15), color=PALETTE[0], linewidth=2.5)
+    ax2.plot(xg, kde(human_wa_values, xg, bw=0.15), color=PALETTE[1], linewidth=2.5,
+             linestyle="--")
     ax2.set_ylabel("Density", fontsize=9, color=DARK)
     ax2.tick_params(colors=DARK, labelsize=8)
     ax2.spines[["top"]].set_visible(False)
-
-    ax.axvline(st["mean"],   color="red",   linestyle="--", linewidth=1.5,
-               label=f"mean={st['mean']:.3f}")
-    ax.axvline(st["median"], color="orange", linestyle=":",  linewidth=1.5,
-               label=f"median={st['median']:.3f}")
-    ax.axvspan(st["p25"], st["p75"], alpha=0.12, color="blue",
-               label=f"IQR [{st['p25']:.2f}–{st['p75']:.2f}]")
-
-    style_ax(ax, title="Weighted Average Score Distribution",
+ 
+    # Mean / median lines for model
+    ax.axvline(st["mean"],   color="red",        linestyle="--", linewidth=1.5,
+               label=f"model mean={st['mean']:.3f}")
+    ax.axvline(st["median"], color="darkorange",  linestyle=":",  linewidth=1.5,
+               label=f"model median={st['median']:.3f}")
+    ax.axvspan(st["p25"], st["p75"], alpha=0.10, color=PALETTE[0],
+               label=f"model IQR [{st['p25']:.2f}\u2013{st['p75']:.2f}]")
+ 
+    # Mean / median lines for human
+    ax.axvline(human_st["mean"],   color="saddlebrown", linestyle="--", linewidth=1.5,
+               label=f"human mean={human_st['mean']:.3f}")
+    ax.axvline(human_st["median"], color="goldenrod",   linestyle=":",  linewidth=1.5,
+               label=f"human median={human_st['median']:.3f}")
+    ax.axvspan(human_st["p25"], human_st["p75"], alpha=0.10, color=PALETTE[1],
+               label=f"human IQR [{human_st['p25']:.2f}\u2013{human_st['p75']:.2f}]")
+ 
+    style_ax(ax, title="Weighted Average Score Distribution \u2014 Model vs Human",
              xlabel="Weighted Average", ylabel="Count")
-    ax.legend(fontsize=9, frameon=False)
-
-    # Stats box
-    stats_text = (f"n={st['n']}   mean={st['mean']:.3f}   median={st['median']:.3f}\n"
-                  f"std={st['std']:.3f}   min={st['min']:.2f}   max={st['max']:.2f}\n"
-                  f"P10={st['p10']:.3f}   P90={st['p90']:.3f}")
+    ax.legend(fontsize=8, frameon=False, loc="upper left")
+ 
+    # Stats box — two columns, model left / human right
+    stats_text = (
+        f"{'':20s}  {'Model':>10}   {'Human':>10}\n"
+        f"{'n':<20s}  {st['n']:>10}   {human_st['n']:>10}\n"
+        f"{'mean':<20s}  {st['mean']:>10.3f}   {human_st['mean']:>10.3f}\n"
+        f"{'median':<20s}  {st['median']:>10.3f}   {human_st['median']:>10.3f}\n"
+        f"{'std':<20s}  {st['std']:>10.3f}   {human_st['std']:>10.3f}\n"
+        f"{'P10 / P90':<20s}  {st['p10']:>4.2f}\u2013{st['p90']:<5.2f}"
+        f"  {human_st['p10']:>4.2f}\u2013{human_st['p90']:<4.2f}"
+    )
     ax.text(0.98, 0.97, stats_text, transform=ax.transAxes,
-            fontsize=8, va="top", ha="right",
+            fontsize=7.5, va="top", ha="right", family="monospace",
             bbox=dict(boxstyle="round,pad=0.4", facecolor="white",
                       edgecolor=GREY, alpha=0.8))
-
     fig.tight_layout()
     pdf.savefig(fig, bbox_inches="tight")
     plt.close(fig)
@@ -389,9 +447,13 @@ def main(judge_path: str, pdf_path: str) -> None:
     records = load_jsonl(judge_path)
     print(f"  → {len(records)} entries")
 
+    human_path = "../output/policy_judge_llama/mathdial_human_teacher_judge_scores.jsonl"
+    human_records = load_jsonl(human_path)
+
     dim_values: dict[str, list] = defaultdict(list)
     dim_counts:  dict[str, Counter] = defaultdict(Counter)
     wa_values: list = []
+    human_wa_values: list = []
 
     for rec in records:
         js = rec.get("judge_scores", {})
@@ -403,6 +465,12 @@ def main(judge_path: str, pdf_path: str) -> None:
             if isinstance(v, (int, float)):
                 dim_values[dim].append(float(v))
                 dim_counts[dim][int(v)] += 1
+
+    for rec in human_records:
+        js = rec.get("judge_scores", {})
+        wa = weighted_average(js)
+        if not math.isnan(wa):
+            human_wa_values.append(wa)
 
     Path(pdf_path).parent.mkdir(parents=True, exist_ok=True)
 
@@ -419,7 +487,7 @@ def main(judge_path: str, pdf_path: str) -> None:
     with PdfPages(pdf_path) as pdf:
         plot_freq_bars(dim_counts, dim_values, pdf)
         plot_kde_histograms(dim_values, pdf)
-        plot_weighted_avg(wa_values, pdf)
+        plot_weighted_avg(wa_values, human_wa_values, pdf)
         plot_correlation_heatmap(dim_values, pdf)
         plot_boxplots(dim_values, wa_values, pdf)
         plot_cdfs(dim_values, pdf)
