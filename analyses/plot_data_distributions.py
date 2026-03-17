@@ -35,15 +35,15 @@ def parse_conversation_length(conversation_str):
 def main():
     plot_dimension = sys.argv[1]
 
-    if plot_dimension not in ['self-typical-confusion', 'self-typical-interactions', 'self-correctness', 'conversation-length']:
-        print("Invalid plot dimension. Please choose 'self-typical-confusion', 'self-typical-interactions', 'self-correctness', or 'conversation-length'.")
+    if plot_dimension not in ['self-typical-confusion', 'self-typical-interactions', 'self-correctness', 'conversation-length', 'combined-self-typical']:
+        print("Invalid plot dimension. Please choose 'self-typical-confusion', 'self-typical-interactions', 'self-correctness', 'conversation-length', or 'combined-self-typical'.")
         return
 
     with open('../data/train.jsonl', 'r') as f:
         train_data = [json.loads(line) for line in f]
-        if plot_dimension == 'self-typical-confusion':
+        if plot_dimension in ('self-typical-confusion', 'combined-self-typical'):
             confusion_train_data = [example['self-typical-confusion'] for example in train_data if 'self-typical-confusion' in example and example['self-typical-confusion'] is not None]
-        elif plot_dimension == 'self-typical-interactions':
+        if plot_dimension in ('self-typical-interactions', 'combined-self-typical'):
             typical_train_data = [example['self-typical-interactions'] for example in train_data if 'self-typical-interactions' in example and example['self-typical-interactions'] is not None]
         elif plot_dimension == 'self-correctness':
             correctness_train_data = [example['self-correctness'] for example in train_data if 'self-correctness' in example and example['self-correctness'] is not None]
@@ -52,9 +52,9 @@ def main():
 
     with open('../data/test.jsonl', 'r') as f:
         test_data = [json.loads(line) for line in f]
-        if plot_dimension == 'self-typical-confusion':
+        if plot_dimension in ('self-typical-confusion', 'combined-self-typical'):
             confusion_test_data = [example['self-typical-confusion'] for example in test_data if 'self-typical-confusion' in example and example['self-typical-confusion'] is not None]
-        elif plot_dimension == 'self-typical-interactions':
+        if plot_dimension in ('self-typical-interactions', 'combined-self-typical'):
             typical_test_data = [example['self-typical-interactions'] for example in test_data if 'self-typical-interactions' in example and example['self-typical-interactions'] is not None]
         elif plot_dimension == 'self-correctness':
             correctness_test_data = [example['self-correctness'] for example in test_data if 'self-correctness' in example and example['self-correctness'] is not None]
@@ -62,11 +62,6 @@ def main():
             conversation_length_test_data = [parse_conversation_length(example['conversation']) for example in test_data if 'conversation' in example and example['conversation'] is not None]
 
     if plot_dimension == 'self-typical-confusion':
-        df = pd.DataFrame({
-            'Self-Typical Confusion Score': np.concatenate([confusion_train_data, confusion_test_data]),
-            'Dataset': ['Train'] * len(confusion_train_data) + ['Val'] * len(confusion_test_data)
-        })
-
         bin_edges = np.arange(0.5, 6, 1)
         # Compute normalized histograms for each dataset
         train_counts, _ = np.histogram(confusion_train_data, bins=bin_edges)
@@ -77,8 +72,9 @@ def main():
         # Plot as bar chart for probability distributions
         width = 0.35
         x = np.arange(1, 6)
-        plt.bar(x - width/2, train_probs, width, label=f'Train (n={len(confusion_train_data)})', color='tab:blue', edgecolor='black')
-        plt.bar(x + width/2, test_probs, width, label=f'Val (n={len(confusion_test_data)})', color='tab:orange', edgecolor='black')
+        colors = plt.cm.tab10(np.linspace(0, 0.9, 2))
+        plt.bar(x - width/2, train_probs, width, label=f'Train (n={len(confusion_train_data)})', color=colors[0], edgecolor='black')
+        plt.bar(x + width/2, test_probs, width, label=f'Val (n={len(confusion_test_data)})', color=colors[1], edgecolor='black')
         plt.xlabel('Self-Typical Confusion Score')
         plt.ylabel('Probability')
         plt.xticks([1, 2, 3, 4, 5])
@@ -93,12 +89,67 @@ def main():
         ax.spines['bottom'].set_visible(True)
         plt.savefig('plots/dataset_stats/self_typical_confusion_distribution.png')
     # plt.show()
+    elif plot_dimension == 'combined-self-typical':
+        # Combined plot: Confusion (blues) and Interactions (greens), Train vs Val
+        bin_edges = np.arange(0.5, 6, 1)
+        x = np.arange(1, 6)
+ 
+        # Compute normalized histograms
+        conf_train_counts, _ = np.histogram(confusion_train_data, bins=bin_edges)
+        conf_test_counts, _  = np.histogram(confusion_test_data,  bins=bin_edges)
+        conf_train_probs = conf_train_counts / conf_train_counts.sum()
+        conf_test_probs  = conf_test_counts  / conf_test_counts.sum()
+ 
+        int_train_counts, _ = np.histogram(typical_train_data, bins=bin_edges)
+        int_test_counts, _  = np.histogram(typical_test_data,  bins=bin_edges)
+        int_train_probs = int_train_counts / int_train_counts.sum()
+        int_test_probs  = int_test_counts  / int_test_counts.sum()
+ 
+        # Four groups per x-tick: conf_train | conf_val | int_train | int_val
+        width = 0.2
+        offsets = [-1.5, -0.5, 0.5, 1.5]
+ 
+        colors = plt.cm.tab10(np.linspace(0, 0.9, 10))  # expand to 10 to access all tab10 colors
+        blue  = colors[0]  # same blue as your other plots
+        green = colors[2]  # tab10 green, similar style
+
+        # Then use alpha to distinguish Train vs Val:
+        blue_dark=(*blue[:3],  1.0)   # Confusion Train    – full blue
+        blue_light=(*blue[:3],  0.45)  # Confusion Val      – faded blue
+        green_dark=(*green[:3], 1.0)   # Interactions Train – full green
+        green_light=(*green[:3], 0.45)  # Interactions Val   – faded green
+ 
+        fig, ax = plt.subplots(figsize=(10, 6))
+ 
+        ax.bar(x + offsets[0] * width, conf_train_probs, width,
+               label=f'Confusion – Train (n={len(confusion_train_data)})',
+               color=blue_dark,  edgecolor='white', linewidth=0.6)
+        ax.bar(x + offsets[1] * width, conf_test_probs,  width,
+               label=f'Confusion – Val (n={len(confusion_test_data)})',
+               color=blue_light, edgecolor='white', linewidth=0.6)
+        ax.bar(x + offsets[2] * width, int_train_probs,  width,
+               label=f'Interactions – Train (n={len(typical_train_data)})',
+               color=green_dark,  edgecolor='white', linewidth=0.6)
+        ax.bar(x + offsets[3] * width, int_test_probs,   width,
+               label=f'Interactions – Val (n={len(typical_test_data)})',
+               color=green_light, edgecolor='white', linewidth=0.6)
+ 
+        ax.set_xlabel('Score', fontsize=16, fontweight='bold')
+        ax.set_ylabel('Probability', fontsize=16, fontweight='bold')
+        ax.set_title('Distribution of Self-Typical Confusion & Interaction Scores',
+                     fontsize=16, fontweight='bold', pad=12)
+        ax.set_xticks(x)
+        ax.set_xticklabels([1, 2, 3, 4, 5], fontsize=14)
+        ax.tick_params(axis='y', labelsize=14)
+        ax.legend(fontsize=14, framealpha=0.9)
+        ax.grid(axis='y', alpha=0.4, linestyle='--')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+ 
+        plt.tight_layout()
+        plt.savefig('plots/dataset_stats/combined_self_typical_distribution.png', dpi=150)
     elif plot_dimension == 'self-typical-interactions':
         bin_edges = np.arange(0.5, 6, 1)
-        df = pd.DataFrame({
-            'Self-Typical Interaction score': np.concatenate([typical_train_data, typical_test_data]),
-            'Dataset': ['Train'] * len(typical_train_data) + ['Val'] * len(typical_test_data)
-        })
 
         # Compute normalized histograms for each dataset
         train_counts, _ = np.histogram(typical_train_data, bins=bin_edges)
@@ -109,8 +160,9 @@ def main():
         # Plot as bar chart for probability distributions
         width = 0.35
         x = np.arange(1, 6)
-        plt.bar(x - width/2, train_probs, width, label=f'Train (n={len(typical_train_data)})', color='tab:blue', edgecolor='black')
-        plt.bar(x + width/2, test_probs, width, label=f'Val (n={len(typical_test_data)})', color='tab:orange', edgecolor='black')
+        colors = plt.cm.tab10(np.linspace(0, 0.9, 2))
+        plt.bar(x - width/2, train_probs, width, label=f'Train (n={len(typical_train_data)})', color=colors[0], edgecolor='black')
+        plt.bar(x + width/2, test_probs, width, label=f'Val (n={len(typical_test_data)})', color=colors[1], edgecolor='black')
         plt.xlabel('Self-Typical Interaction score')
         plt.ylabel('Probability')
         plt.xticks([1, 2, 3, 4, 5])
@@ -133,8 +185,9 @@ def main():
         test_probs = test_counts.reindex(categories, fill_value=0) / test_counts.sum()
         width = 0.35
         x = np.arange(len(categories))
-        plt.bar(x - width/2, train_probs, width, label=f'Train (n={len(correctness_train_data)})', color='tab:blue', edgecolor='black')
-        plt.bar(x + width/2, test_probs, width, label=f'Val (n={len(correctness_test_data)})', color='tab:orange', edgecolor='black')
+        colors = plt.cm.tab10(np.linspace(0, 0.9, 2))
+        plt.bar(x - width/2, train_probs, width, label=f'Train (n={len(correctness_train_data)})', color=colors[0], edgecolor='black')
+        plt.bar(x + width/2, test_probs, width, label=f'Val (n={len(correctness_test_data)})', color=colors[1], edgecolor='black')
         plt.xlabel('Self-Correctness')
         plt.ylabel('Probability')
         plt.xticks(x, categories)
