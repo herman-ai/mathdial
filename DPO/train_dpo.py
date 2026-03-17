@@ -56,9 +56,19 @@ def get_latest_checkpoint(output_dir: str):
 model_name_or_path = args.sft_checkpoint
 ref_name_or_path = args.sft_checkpoint if args.ref_checkpoint in ("", "__SAME_AS_SFT__") else args.ref_checkpoint
 
+# The preference-pair prompts are plain-text completion strings built by
+# BaseModelTeacher.build_prompt(), not chat-template messages.  DPOTrainer
+# treats string prompts as the "standard" (non-conversational) format and
+# concatenates prompt+chosen / prompt+rejected directly without calling
+# apply_chat_template — which is exactly what we want.  We must NOT inject
+# a chat template here; doing so would be saved into the checkpoint and
+# corrupt downstream rounds.
 tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, use_fast=True)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
+# DPOTrainer requires left-padding so that the loss mask aligns correctly
+# with the completion tokens at the end of the sequence.
+tokenizer.padding_side = "left"
 
 model = AutoModelForCausalLM.from_pretrained(
     model_name_or_path,

@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import re
 import torch
 import sys
@@ -59,12 +60,16 @@ class BaseModelTeacher:
             text = text[:match.start()]
         return text.strip()
 
-    def response(self, history: History, question: str, ground_truth_solution: str) -> str:
-        prompt = self.PROMPT_TEMPLATE.format(
+    def build_prompt(self, history: History, question: str, ground_truth_solution: str) -> str:
+        """Return the plain-text prompt string (no tokenization)."""
+        return self.PROMPT_TEMPLATE.format(
             question=question,
             ground_truth=ground_truth_solution,
             history=self._build_history(history),
         )
+
+    def response(self, history: History, question: str, ground_truth_solution: str) -> str:
+        prompt = self.build_prompt(history, question, ground_truth_solution)
 
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
 
@@ -84,6 +89,38 @@ class BaseModelTeacher:
             outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True
         )
         return self._stop_at_turn_boundary(response)
+
+    def response_batch(self, histories, questions, ground_truth_solutions) -> list:
+        """Generate one response per (history, question, solution) triple."""
+        prompts = [
+            self.build_prompt(h, q, s)
+            for h, q, s in zip(histories, questions, ground_truth_solutions)
+        ]
+        enc = self.tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+        ).to(self.device)
+
+        with torch.no_grad():
+            out = self.model.generate(
+                **enc,
+                max_new_tokens=150,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.9,
+                repetition_penalty=1.1,
+                pad_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
+            )
+
+        results = []
+        for i, ids in enumerate(out):
+            prompt_len = enc.input_ids[i].shape[0]
+            text = self.tokenizer.decode(ids[prompt_len:], skip_special_tokens=True)
+            results.append(self._stop_at_turn_boundary(text))
+        return results
 
 
 class SFTStudent:
@@ -163,10 +200,15 @@ def get_args():
                         default="Qwen_SFT_model/finetuned_qwen_student_model",
                         help="SFT fine-tuned student model path.")
     parser.add_argument("--max_utterances", type=int, default=4)
+    parser.add_argument("--max_conversations", type=int, default=0,
+                        help="If >0, process only the first N problems (for smoke tests)")
+    parser.add_argument("--enable_natural_stop", action="store_true",
+                        help="(Unused for base model teacher; accepted for CLI compatibility)")
     return parser.parse_args()
 
 
 def export_to_jsonl(data, output_file):
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, 'w', encoding='utf-8') as f:
         for conversation in data:
             f.write(json.dumps(conversation) + '\n')
@@ -200,6 +242,8 @@ if __name__ == '__main__':
 
     conversations = []
     data = read_jsonl(args.input_file)
+    if args.max_conversations and args.max_conversations > 0:
+        data = data[:args.max_conversations]
 
     teacher = BaseModelTeacher(teacher_model, teacher_tokenizer, device)
     student = SFTStudent(student_model, student_tokenizer, device)

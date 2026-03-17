@@ -37,6 +37,7 @@ from history import History
 from message import Message
 from roles import Roles
 from qwen_baseline import QwenTeacher
+from qwen_base_teacher import BaseModelTeacher
 
 
 MODEL_PATH = os.path.join(
@@ -58,6 +59,9 @@ def parse_args():
                         help="Output JSONL path. Defaults to data/candidate_responses/<split>_candidates.jsonl")
     parser.add_argument("--max_conversations", type=int, default=0,
                         help="If >0, process only first N conversations from the split (for smoke tests)")
+    parser.add_argument("--base_model", action="store_true",
+                        help="Use BaseModelTeacher (plain-text completion) instead of QwenTeacher (chat template). "
+                             "Required when model_path points to a base-model SFT checkpoint.")
     return parser.parse_args()
 
 
@@ -98,9 +102,15 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Loading teacher model: {args.model_path}", flush=True)
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(args.model_path).to(device)
     model.eval()
-    teacher = QwenTeacher(model, tokenizer, device)
+    if args.base_model:
+        print("Using BaseModelTeacher (plain-text completion format)", flush=True)
+        teacher = BaseModelTeacher(model, tokenizer, device)
+    else:
+        teacher = QwenTeacher(model, tokenizer, device)
     print(f"Teacher model loaded on {device}", flush=True)
 
     dataset = load_dataset("eth-nlped/mathdial")[args.split]
