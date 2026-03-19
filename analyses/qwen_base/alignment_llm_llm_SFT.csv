@@ -1,0 +1,7 @@
+metric,n,human_win_rate,policy_win_rate,tie_rate,mean_margin_human_minus_policy,mean_abs_margin,human_mean,policy_mean,human_std,policy_std,llm_judge_model,policy_prefix
+socratic_guidance,100,0.53,0.11,0.36,0.81,1.19,3.54,2.73,0.7709367252527501,1.013594463961666,llm_llm,SFT
+mathematical_accuracy,100,0.0,0.0,1.0,0.0,0.0,5.0,5.0,0.0,0.0,llm_llm,SFT
+relevance,100,0.48,0.12,0.4,0.44,0.78,4.68,4.24,0.5839607015973772,0.8423152316650516,llm_llm,SFT
+conciseness,100,0.87,0.04,0.09,1.92,2.02,3.64,1.72,0.8350890595461884,0.7531750973530175,llm_llm,SFT
+overall_quality,100,0.67,0.08,0.25,1.02,1.2,3.96,2.94,0.5846521887568554,0.9300809131739588,llm_llm,SFT
+weighted_composite,100,0.83,0.12,0.05,0.8638461538461536,1.0561538461538462,4.084615384615384,3.220769230769231,0.5261098597098253,0.7050671726076522,llm_llm,SFT

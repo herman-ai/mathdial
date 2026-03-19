@@ -1,0 +1,7 @@
+metric,n,human_win_rate,policy_win_rate,tie_rate,mean_margin_human_minus_policy,mean_abs_margin,human_mean,policy_mean,human_std,policy_std,llm_judge_model,policy_prefix
+socratic_guidance,100,0.59,0.06,0.35,1.04,1.22,3.54,2.5,0.7709367252527501,0.9265990819042822,multiround,DPO_R2
+mathematical_accuracy,100,0.0,0.0,1.0,0.0,0.0,5.0,5.0,0.0,0.0,multiround,DPO_R2
+relevance,100,0.55,0.07,0.38,0.7,0.86,4.68,3.98,0.5839607015973772,0.8759410523960658,multiround,DPO_R2
+conciseness,100,0.91,0.0,0.09,2.08,2.08,3.64,1.56,0.8350890595461884,0.640706680552849,multiround,DPO_R2
+overall_quality,100,0.71,0.04,0.25,1.18,1.26,3.96,2.78,0.5846521887568554,0.8828329057040973,multiround,DPO_R2
+weighted_composite,100,0.89,0.07,0.04,1.0307692307692309,1.106153846153846,4.084615384615384,3.0538461538461545,0.5261098597098253,0.6613107430477448,multiround,DPO_R2

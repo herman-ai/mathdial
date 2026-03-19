@@ -1,0 +1,7 @@
+metric,n,human_win_rate,policy_win_rate,tie_rate,mean_margin_human_minus_policy,mean_abs_margin,human_mean,policy_mean,human_std,policy_std,llm_judge_model,policy_prefix
+socratic_guidance,100,0.07,0.64,0.29,-0.84,0.98,3.35,4.19,0.6571287406727709,0.7479939501726932,mixtral,qwen_instruct
+mathematical_accuracy,100,0.03,0.22,0.75,-0.27,0.41,4.61,4.88,0.8027100562117272,0.5908391567007972,mixtral,qwen_instruct
+relevance,100,0.02,0.18,0.8,-0.21,0.31,4.72,4.93,0.6208498574168682,0.40837198332852936,mixtral,qwen_instruct
+conciseness,100,0.18,0.43,0.39,-0.32,0.74,3.79,4.11,0.7148497051899099,0.723278171336114,mixtral,qwen_instruct
+overall_quality,100,0.1,0.75,0.15,-0.8,1.04,3.83,4.63,0.6824643402827548,0.661418738375885,mixtral,qwen_instruct
+weighted_composite,100,0.16,0.82,0.02,-0.563076923076923,0.7553846153846153,3.97,4.533076923076923,0.5858179877070832,0.529592289922084,mixtral,qwen_instruct

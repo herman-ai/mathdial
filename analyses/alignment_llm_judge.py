@@ -26,27 +26,6 @@ DEFAULT_WEIGHTS = {
 DEFAULT_WEIGHT_DENOM = 6.5
 
 
-def parse_weights_arg(weights_str: str | None) -> Tuple[Dict[str, float], float]:
-
-    if not weights_str:
-        return DEFAULT_WEIGHTS.copy(), DEFAULT_WEIGHT_DENOM
-
-    weights = json.loads(weights_str)
-
-    missing = [m for m in METRICS if m not in weights]
-    if missing:
-        raise ValueError(f"Missing weights for metrics: {missing}")
-
-    weights = {k: float(v) for k, v in weights.items()}
-
-    denom = float(sum(weights.values()))
-
-    if denom <= 0:
-        raise ValueError("Sum of weights must be > 0")
-
-    return weights, denom
-
-
 def load_scores_jsonl(path: str) -> pd.DataFrame:
 
     rows: List[Dict[str, Any]] = []
@@ -145,12 +124,13 @@ def main():
 
     parser.add_argument("--prefix", required=True)
 
-    parser.add_argument("--weights_json", default=None)
     parser.add_argument("--tie_threshold", type=float, default=0.0)
 
     args = parser.parse_args()
 
-    weights, denom = parse_weights_arg(args.weights_json)
+    # fixed weights (no parsing)
+    weights = DEFAULT_WEIGHTS
+    denom = DEFAULT_WEIGHT_DENOM
 
     human_df = load_scores_jsonl(args.human_scores)
     policy_df = load_scores_jsonl(args.policy_scores)
@@ -195,7 +175,7 @@ def main():
     df["llm_judge_model"] = judge_model
     df["policy_prefix"] = args.prefix
 
-    output_name = f"alignment_{judge_model}_{args.prefix}.csv"
+    output_name = f"qwen_base/alignment_{judge_model}_{args.prefix}.csv"
 
     df.to_csv(output_name, index=False)
 
